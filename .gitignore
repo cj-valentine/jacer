@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+env/
+.env
+.pytest_cache/
+*.egg-info/
+build/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# Editor / IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude / local agent state
+.claude/
+
+# Personal task data — never commit
+**/data/tasks/
+**/data/archive/
+**/data/logs/
+
+# Test/build logs
+**/e2e_*.log
