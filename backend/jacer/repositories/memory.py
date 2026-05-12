@@ -23,11 +23,7 @@ class InMemoryRepository(Repository):
         if status is not None:
             result = [t for t in result if t.status == status]
         if date is not None:
-            result = [
-                t
-                for t in result
-                if t.scheduled_date == date or t.instance_date == date
-            ]
+            result = [t for t in result if t.scheduled_date == date or t.instance_date == date]
         return result
 
     def get_task(self, task_id: str) -> Task | None:
@@ -58,11 +54,7 @@ class InMemoryRepository(Repository):
     # Template items
 
     def list_template_items(self, template_id: str) -> list[TemplateItem]:
-        return [
-            item
-            for item in self._template_items.values()
-            if item.template_id == template_id
-        ]
+        return [i for i in self._template_items.values() if i.template_id == template_id]
 
     def get_template_item(self, item_id: str) -> TemplateItem | None:
         return self._template_items.get(item_id)
