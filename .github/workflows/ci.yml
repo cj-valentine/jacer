@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    name: Repository smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Phase 0 scaffolding
+        run: |
+          test -f LICENSE
+          test -f README.md
+          test -f CONTRIBUTING.md
+          test -f CODE_OF_CONDUCT.md
+          test -d legacy
+          test -f legacy/backend/main.py
+          echo "Phase 0 scaffolding intact."
+
+  # Backend and frontend test jobs land in Phase 1 / Phase 2 respectively.
+  # Placeholders intentionally omitted until there is real code to exercise.
