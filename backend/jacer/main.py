@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from jacer import __version__
-from jacer.routers import health
+from jacer.routers import days, health, tasks, template_items, templates
 
 app = FastAPI(
     title="Jacer API",
@@ -19,3 +19,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router, tags=["Health"])
+app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
+app.include_router(templates.router, prefix="/api/templates", tags=["Templates"])
+app.include_router(template_items.router, prefix="/api", tags=["Template items"])
+app.include_router(days.router, prefix="/api/days", tags=["Days"])
