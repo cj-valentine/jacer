@@ -21,23 +21,9 @@ def _validate_date(value: str) -> None:
         ) from exc
 
 
-@router.get("/{date}", response_model=list[Task])
-def list_day_tasks(date: str, repo: Repository = Depends(get_repository)):
-    _validate_date(date)
-    return repo.list_tasks(date=date)
-
-
-@router.post("/{date}/materialise", response_model=MaterialiseResponse)
-def materialise(date: str, repo: Repository = Depends(get_repository)):
-    _validate_date(date)
-    created = materialise_day(repo, date)
-    return MaterialiseResponse(
-        date=date,
-        created_count=len(created),
-        created_task_ids=[t.id for t in created],
-    )
-
-
+# Specific routes must be declared before the generic /{date} routes,
+# otherwise FastAPI would match 'horizon' as a date and validation would
+# reject it before reaching this handler.
 @router.post("/horizon/materialise", response_model=HorizonMaterialiseResponse)
 def materialise_horizon_endpoint(
     days: int = 14,
@@ -55,6 +41,23 @@ def materialise_horizon_endpoint(
     return HorizonMaterialiseResponse(
         start_date=start,
         days=days,
+        created_count=len(created),
+        created_task_ids=[t.id for t in created],
+    )
+
+
+@router.get("/{date}", response_model=list[Task])
+def list_day_tasks(date: str, repo: Repository = Depends(get_repository)):
+    _validate_date(date)
+    return repo.list_tasks(date=date)
+
+
+@router.post("/{date}/materialise", response_model=MaterialiseResponse)
+def materialise(date: str, repo: Repository = Depends(get_repository)):
+    _validate_date(date)
+    created = materialise_day(repo, date)
+    return MaterialiseResponse(
+        date=date,
         created_count=len(created),
         created_task_ids=[t.id for t in created],
     )
