@@ -1,4 +1,4 @@
-from datetime import date as date_type, datetime
+import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -13,7 +13,7 @@ router = APIRouter()
 
 def _validate_date(value: str) -> None:
     try:
-        date_type.fromisoformat(value)
+        dt.date.fromisoformat(value)
     except ValueError as exc:
         raise HTTPException(
             status_code=422,
@@ -47,7 +47,7 @@ def materialise_horizon_endpoint(
     if days < 1 or days > 60:
         raise HTTPException(status_code=422, detail="days must be between 1 and 60")
     if start is None:
-        start = datetime.now().date().isoformat()
+        start = dt.datetime.now().date().isoformat()
     else:
         _validate_date(start)
 
