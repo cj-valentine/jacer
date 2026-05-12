@@ -25,7 +25,7 @@ For small fixes (typos, broken links, obvious bugs), just send the PR.
 
 ## Scope discipline
 
-Jacer is deliberately narrow. Before proposing a feature, check it against [Marvin UX Moves We Borrowed](https://github.com/cjvalentine/jacer/wiki/marvin-ux-moves) (linked once the wiki is up) — features that match the routine-template or day-planning loops are in scope. Features outside that (habits, gamification, calendar sync, plugins, multi-user) are likely answered with "thank you, please open a discussion."
+Jacer is deliberately narrow. Before proposing a feature, check it against [Marvin UX Moves We Borrowed](https://github.com/cj-valentine/jacer/wiki/marvin-ux-moves) (linked once the wiki is up) — features that match the routine-template or day-planning loops are in scope. Features outside that (habits, gamification, calendar sync, plugins, multi-user) are likely answered with "thank you, please open a discussion."
 
 ## Code of Conduct
 
