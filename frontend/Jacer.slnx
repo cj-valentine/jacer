@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="Jacer.ApiClient/Jacer.ApiClient.csproj" />
+  <Project Path="Jacer.Components/Jacer.Components.csproj" />
+  <Project Path="Jacer.E2E/Jacer.E2E.csproj" />
+  <Project Path="Jacer.Tests/Jacer.Tests.csproj" />
+  <Project Path="Jacer.Web/Jacer.Web.csproj" />
+</Solution>

@@ -1,0 +1,185 @@
+@inject ITasksApi Api
+@inject ISnackbar Snackbar
+
+@* ─────────────────────────────────────────────────────────────────────────
+   TODO (Phase 3 — templates): the backend models a task's "done" state two
+   ways — status == "done" AND a separate is_completed bool. Phase 2 drives the
+   board by status only and ignores is_completed. Decide which is canonical
+   (or how they relate) when wiring template materialisation. Don't resolve here.
+   ───────────────────────────────────────────────────────────────────────── *@
+
+<MudText Typo="Typo.h5" Class="mb-4">Board</MudText>
+
+@* Quick-add: POST {title} on Enter, clear the field optimistically. *@
+<MudTextField @bind-Value="_newTitle"
+              Immediate="true"
+              Placeholder="Add a task and press Enter…"
+              Adornment="Adornment.Start"
+              AdornmentIcon="@Icons.Material.Filled.Add"
+              Variant="Variant.Outlined"
+              Class="mb-4"
+              Disabled="_loading"
+              OnKeyDown="OnQuickAddKeyDown" />
+
+@* Today cap bar — 8h (480 min). Yellow at 80%, red at 100%. *@
+<div class="mb-1 d-flex justify-space-between align-center">
+    <MudText Typo="Typo.caption">Today: @_todayMinutes / @CapMinutes min</MudText>
+    <MudText Typo="Typo.caption" Color="@CapColour">@(_todayMinutes * 100 / CapMinutes)%</MudText>
+</div>
+<MudProgressLinear Color="@CapColour" Value="@CapValue" Class="mb-6" Size="Size.Large" Rounded="true" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error">@_error</MudAlert>
+}
+else
+{
+    <MudDropContainer T="BoardItem" @ref="_container" Items="_items"
+                      ItemsSelector="@((item, zone) => item.Status == ParseZone(zone))"
+                      ItemDropped="OnItemDropped"
+                      Class="d-flex gap-4 flex-wrap">
+        <ChildContent>
+            @foreach (var status in BoardColumns.Order)
+            {
+                <MudPaper Outlined="true" Class="pa-3 d-flex flex-column" Style="min-width: 280px; flex: 1;">
+                    <div class="d-flex justify-space-between align-center mb-3">
+                        <MudText Typo="Typo.subtitle1">@BoardColumns.Label(status)</MudText>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text">
+                            @_items.Count(i => i.Status == status)
+                        </MudChip>
+                    </div>
+                    <MudDropZone T="BoardItem" Identifier="@status.ToString()"
+                                 Class="flex-grow-1" Style="min-height: 120px;" />
+                </MudPaper>
+            }
+        </ChildContent>
+        <ItemRenderer>
+            <TaskCard Task="context.Task"
+                      MoveTargets="BoardColumns.MoveTargetsFor(context.Status)"
+                      OnMove="OnMoveAsync" />
+        </ItemRenderer>
+    </MudDropContainer>
+}
+
+@code {
+    private const int CapMinutes = 8 * 60;
+
+    private MudDropContainer<BoardItem>? _container;
+    // Same list reference for the lifetime of the component — MudDropContainer
+    // tracks this instance and re-renders on Refresh(). Replacing the reference
+    // makes newly added items fail to render, so always mutate in place.
+    private readonly List<BoardItem> _items = [];
+    private string _newTitle = "";
+    private int _todayMinutes;
+    private bool _loading = true;
+    private string? _error;
+
+    private double CapValue => Math.Min(100, _todayMinutes * 100.0 / CapMinutes);
+
+    private Color CapColour => _todayMinutes >= CapMinutes
+        ? Color.Error
+        : _todayMinutes >= CapMinutes * 0.8
+            ? Color.Warning
+            : Color.Primary;
+
+    private static TaskStatus ParseZone(string zone) => Enum.Parse<TaskStatus>(zone);
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            var all = await Api.ListTasksAsync();
+            _items.Clear();
+            _items.AddRange(all
+                .Where(t => BoardColumns.Order.Contains(t.Status))
+                .Select(t => new BoardItem { Task = t, Status = t.Status }));
+            RecalcCap();
+            _error = null;
+            _container?.Refresh();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not reach the backend: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void RecalcCap() =>
+        _todayMinutes = _items.Where(i => i.Status == TaskStatus.Today).Sum(i => i.Task.DurationMinutes);
+
+    private async Task OnQuickAddKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter")
+        {
+            return;
+        }
+
+        var title = _newTitle.Trim();
+        if (title.Length == 0)
+        {
+            return;
+        }
+
+        _newTitle = "";  // optimistic clear
+
+        try
+        {
+            await Api.CreateTaskAsync(new TaskCreateDto { Title = title });
+            await ReloadAsync();
+            Snackbar.Add($"Added “{title}”", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not add task: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // Drag-and-drop drop handler.
+    private async Task OnItemDropped(MudItemDropInfo<BoardItem> info) =>
+        await ApplyMoveAsync(info.Item!, ParseZone(info.DropzoneIdentifier));
+
+    // Plain-button move handler (kept as an accessible fallback to dragging).
+    private async Task OnMoveAsync(TaskMove move)
+    {
+        var item = _items.FirstOrDefault(i => i.Task.Id == move.TaskId);
+        if (item is not null)
+        {
+            await ApplyMoveAsync(item, move.Target);
+        }
+    }
+
+    private async Task ApplyMoveAsync(BoardItem item, TaskStatus target)
+    {
+        if (item.Status == target)
+        {
+            return;
+        }
+
+        var previous = item.Status;
+        item.Status = target;   // optimistic
+        RecalcCap();
+        _container?.Refresh();
+
+        try
+        {
+            await Api.UpdateTaskAsync(item.Task.Id, new TaskUpdateDto { Status = target });
+            Snackbar.Add($"Moved to {BoardColumns.Label(target)}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            item.Status = previous;   // revert on failure
+            RecalcCap();
+            _container?.Refresh();
+            Snackbar.Add($"Could not move task: {ex.Message}", Severity.Error);
+        }
+    }
+}

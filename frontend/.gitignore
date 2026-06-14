@@ -1,0 +1,16 @@
+# .NET build output
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+
+# .NET user-specific / IDE
+*.user
+*.suo
+.vs/
+
+# Playwright
+**/playwright-report/
+**/test-results/
+**/.playwright/
+e2e-*.png
