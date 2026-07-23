@@ -1,8 +1,18 @@
 @* A single task card: title, duration estimate, and plain move buttons. *@
 
 <MudPaper Elevation="1" Class="pa-3 mb-2">
-    <MudText Typo="Typo.body2">@Task.Title</MudText>
-    <MudText Typo="Typo.caption" Color="Color.Secondary">@Task.DurationMinutes min</MudText>
+    <div class="d-flex justify-space-between align-start">
+        <div>
+            <MudText Typo="Typo.body2">@Task.Title</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">@Task.DurationMinutes min</MudText>
+        </div>
+        <MudMenu Icon="@Icons.Material.Filled.Schedule" Size="Size.Small"
+                 Dense="true" aria-label="Bump task"
+                 AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+            <MudMenuItem Disabled="_busy" OnClick="@(() => BumpAsync(1))">→ Tomorrow</MudMenuItem>
+            <MudMenuItem Disabled="_busy" OnClick="@(() => BumpAsync(7))">→ Next week</MudMenuItem>
+        </MudMenu>
+    </div>
 
     @if (MoveTargets.Count > 0)
     {
@@ -31,12 +41,22 @@
     [Parameter]
     public EventCallback<TaskMove> OnMove { get; set; }
 
+    [Parameter]
+    public EventCallback<TaskBump> OnBump { get; set; }
+
     private bool _busy;
 
     private async Task MoveAsync(TaskStatus target)
     {
         _busy = true;
         await OnMove.InvokeAsync(new TaskMove(Task.Id, target));
+        _busy = false;
+    }
+
+    private async Task BumpAsync(int daysAhead)
+    {
+        _busy = true;
+        await OnBump.InvokeAsync(new TaskBump(Task.Id, daysAhead));
         _busy = false;
     }
 }

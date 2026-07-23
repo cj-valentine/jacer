@@ -1,12 +1,9 @@
 @inject ITasksApi Api
+@inject IDaysApi Days
 @inject ISnackbar Snackbar
 
-@* ─────────────────────────────────────────────────────────────────────────
-   TODO (Phase 3 — templates): the backend models a task's "done" state two
-   ways — status == "done" AND a separate is_completed bool. Phase 2 drives the
-   board by status only and ignores is_completed. Decide which is canonical
-   (or how they relate) when wiring template materialisation. Don't resolve here.
-   ───────────────────────────────────────────────────────────────────────── *@
+@* The board is driven by status. Per ADR-004, status is canonical and the
+   backend derives is_completed from it, so we only ever read/write status here. *@
 
 <MudText Typo="Typo.h5" Class="mb-4">Board</MudText>
 
@@ -60,7 +57,8 @@ else
         <ItemRenderer>
             <TaskCard Task="context.Task"
                       MoveTargets="BoardColumns.MoveTargetsFor(context.Status)"
-                      OnMove="OnMoveAsync" />
+                      OnMove="OnMoveAsync"
+                      OnBump="OnBumpAsync" />
         </ItemRenderer>
     </MudDropContainer>
 }
@@ -88,7 +86,22 @@ else
 
     private static TaskStatus ParseZone(string zone) => Enum.Parse<TaskStatus>(zone);
 
-    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        // Fire-and-reflect: materialise the next fortnight from locked templates
+        // before loading. Idempotent server-side, so running it on every board
+        // load is safe and keeps upcoming template tasks on the board.
+        try
+        {
+            await Days.MaterialiseHorizonAsync(days: 14);
+        }
+        catch
+        {
+            // Non-fatal: if materialisation is unreachable, still show what's there.
+        }
+
+        await ReloadAsync();
+    }
 
     private async Task ReloadAsync()
     {
@@ -154,6 +167,40 @@ else
         if (item is not null)
         {
             await ApplyMoveAsync(item, move.Target);
+        }
+    }
+
+    // Bump gesture: push a task's scheduled_date forward and move it to Scheduled.
+    private async Task OnBumpAsync(TaskBump bump)
+    {
+        var item = _items.FirstOrDefault(i => i.Task.Id == bump.TaskId);
+        if (item is null)
+        {
+            return;
+        }
+
+        var date = DateTime.Today.AddDays(bump.DaysAhead).ToString("yyyy-MM-dd");
+        var previous = item.Status;
+        item.Status = TaskStatus.Scheduled;   // optimistic
+        RecalcCap();
+        _container?.Refresh();
+
+        try
+        {
+            await Api.UpdateTaskAsync(item.Task.Id, new TaskUpdateDto
+            {
+                ScheduledDate = date,
+                Status = TaskStatus.Scheduled,
+            });
+            var label = bump.DaysAhead == 1 ? "tomorrow" : "next week";
+            Snackbar.Add($"Bumped to {label} ({date})", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            item.Status = previous;   // revert on failure
+            RecalcCap();
+            _container?.Refresh();
+            Snackbar.Add($"Could not bump task: {ex.Message}", Severity.Error);
         }
     }
 
