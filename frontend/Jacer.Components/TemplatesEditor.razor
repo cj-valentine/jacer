@@ -50,9 +50,29 @@ else if (_error is not null)
 }
 else if (_templates.Count == 0)
 {
-    <MudAlert Severity="Severity.Info">
-        No templates yet. Create one to start shaping your weekly routine.
-    </MudAlert>
+    <MudPaper Outlined="true" Class="pa-6 d-flex flex-column align-center gap-3">
+        <MudIcon Icon="@Icons.Material.Filled.CalendarViewWeek" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.h6">Shape your week</MudText>
+        <MudText Typo="Typo.body2" Align="Align.Center" Style="max-width: 480px;">
+            Templates are your recurring routine. Lock one and Jacer materialises its
+            items into tasks each day. Start from a sample week you can edit, or build
+            your own from scratch.
+        </MudText>
+        <div class="d-flex gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.AutoAwesome"
+                       Disabled="_seeding"
+                       OnClick="SeedStarterAsync">
+                Start with a sample week
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       Disabled="_seeding"
+                       OnClick="@(() => _creating = true)">
+                Start from scratch
+            </MudButton>
+        </div>
+    </MudPaper>
 }
 else
 {
@@ -184,7 +204,23 @@ else
     private string? _error;
 
     private bool _creating;
+    private bool _seeding;
     private string _newName = "";
+
+    // A gentle starter routine: weekday planning + a couple of deep-work blocks
+    // and a Friday review, spread across the time-of-day bands so a new user
+    // immediately sees how the grid works. Editable like any other template.
+    private static readonly (int Day, string Title, int Minutes, string? Time)[] StarterItems =
+    [
+        (0, "Plan the day", 15, "09:00"),
+        (1, "Plan the day", 15, "09:00"),
+        (2, "Plan the day", 15, "09:00"),
+        (3, "Plan the day", 15, "09:00"),
+        (4, "Plan the day", 15, "09:00"),
+        (1, "Deep work block", 90, "14:00"),
+        (3, "Deep work block", 90, "14:00"),
+        (4, "Weekly review", 30, "16:00"),
+    ];
 
     private void CancelCreate()
     {
@@ -286,6 +322,36 @@ else
         catch (Exception ex)
         {
             Snackbar.Add($"Could not create template: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task SeedStarterAsync()
+    {
+        _seeding = true;
+        try
+        {
+            var template = await Api.CreateTemplateAsync(new TemplateCreateDto { Name = "My week" });
+            foreach (var (day, title, minutes, time) in StarterItems)
+            {
+                await Api.CreateItemAsync(template.Id, new TemplateItemCreateDto
+                {
+                    DayOfWeek = day,
+                    Title = title,
+                    DurationMinutes = minutes,
+                    DefaultTime = time,
+                });
+            }
+            await ReloadTemplatesAsync();
+            await SelectTemplateAsync(template.Id);
+            Snackbar.Add("Sample week created — edit it, then lock it to start materialising.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not create the sample week: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _seeding = false;
         }
     }
 

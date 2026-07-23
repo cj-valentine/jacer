@@ -33,6 +33,21 @@ else if (_error is not null)
 {
     <MudAlert Severity="Severity.Error">@_error</MudAlert>
 }
+else if (_items.Count == 0)
+{
+    <MudPaper Outlined="true" Class="pa-6 d-flex flex-column align-center gap-3">
+        <MudIcon Icon="@Icons.Material.Filled.Inbox" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.h6">Nothing on the board yet</MudText>
+        <MudText Typo="Typo.body2" Align="Align.Center" Style="max-width: 480px;">
+            Add a task above, or set up a routine in Templates — lock a template and its
+            items appear here automatically each day.
+        </MudText>
+        <MudButton Href="/templates" Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.CalendarViewWeek">
+            Set up templates
+        </MudButton>
+    </MudPaper>
+}
 else
 {
     <MudDropContainer T="BoardItem" @ref="_container" Items="_items"
@@ -58,7 +73,8 @@ else
             <TaskCard Task="context.Task"
                       MoveTargets="BoardColumns.MoveTargetsFor(context.Status)"
                       OnMove="OnMoveAsync"
-                      OnBump="OnBumpAsync" />
+                      OnBump="OnBumpAsync"
+                      OnReset="OnResetAsync" />
         </ItemRenderer>
     </MudDropContainer>
 }
@@ -201,6 +217,29 @@ else
             RecalcCap();
             _container?.Refresh();
             Snackbar.Add($"Could not bump task: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // Reset a diverged template task back to its template definition (ADR-006).
+    private async Task OnResetAsync(string taskId)
+    {
+        try
+        {
+            var reset = await Api.ResetToTemplateAsync(taskId);
+            if (reset is null)
+            {
+                // 404 race: the task or its template item vanished mid-session.
+                Snackbar.Add("Can't reset — the task or its template is no longer available.", Severity.Warning);
+            }
+            else
+            {
+                Snackbar.Add("Reset to template", Severity.Success);
+            }
+            await ReloadAsync();  // pick up restored definition (and cleared dot)
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not reset task: {ex.Message}", Severity.Error);
         }
     }
 

@@ -3,14 +3,28 @@
 <MudPaper Elevation="1" Class="pa-3 mb-2">
     <div class="d-flex justify-space-between align-start">
         <div>
-            <MudText Typo="Typo.body2">@Task.Title</MudText>
+            <div class="d-flex align-center gap-1">
+                @if (Task.Diverged)
+                {
+                    <MudTooltip Text="Edited from its template">
+                        <span class="diverged-dot" aria-label="Edited from its template"></span>
+                    </MudTooltip>
+                }
+                <MudText Typo="Typo.body2">@Task.Title</MudText>
+            </div>
             <MudText Typo="Typo.caption" Color="Color.Secondary">@Task.DurationMinutes min</MudText>
         </div>
-        <MudMenu Icon="@Icons.Material.Filled.Schedule" Size="Size.Small"
-                 Dense="true" aria-label="Bump task"
+        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small"
+                 Dense="true" aria-label="Task actions"
                  AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
             <MudMenuItem Disabled="_busy" OnClick="@(() => BumpAsync(1))">→ Tomorrow</MudMenuItem>
             <MudMenuItem Disabled="_busy" OnClick="@(() => BumpAsync(7))">→ Next week</MudMenuItem>
+            @if (Task.Diverged && Task.TemplateOriginId is not null)
+            {
+                <MudDivider />
+                <MudMenuItem Disabled="_busy" Icon="@Icons.Material.Filled.RestartAlt"
+                             OnClick="ResetAsync">Reset to template</MudMenuItem>
+            }
         </MudMenu>
     </div>
 
@@ -30,6 +44,17 @@
     }
 </MudPaper>
 
+<style>
+    .diverged-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: var(--mud-palette-warning);
+        flex: 0 0 auto;
+    }
+</style>
+
 @code {
     [Parameter, EditorRequired]
     public required TaskDto Task { get; set; }
@@ -44,6 +69,10 @@
     [Parameter]
     public EventCallback<TaskBump> OnBump { get; set; }
 
+    /// <summary>Raised (with the task id) when the user resets a diverged task to its template.</summary>
+    [Parameter]
+    public EventCallback<string> OnReset { get; set; }
+
     private bool _busy;
 
     private async Task MoveAsync(TaskStatus target)
@@ -57,6 +86,13 @@
     {
         _busy = true;
         await OnBump.InvokeAsync(new TaskBump(Task.Id, daysAhead));
+        _busy = false;
+    }
+
+    private async Task ResetAsync()
+    {
+        _busy = true;
+        await OnReset.InvokeAsync(Task.Id);
         _busy = false;
     }
 }
