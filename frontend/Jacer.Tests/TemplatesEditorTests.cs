@@ -66,6 +66,35 @@ public class TemplatesEditorTests
     }
 
     [Fact]
+    public async Task Fortnightly_grid_filters_items_by_selected_week()
+    {
+        var template = new TemplateDto
+        {
+            Id = "tpl-1",
+            Name = "Fortnight",
+            Cadence = Cadence.Fortnightly,
+            WeekAStartDate = "2026-07-20",
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch,
+        };
+        var weekA = new TemplateItemDto { Id = "a", TemplateId = "tpl-1", DayOfWeek = 0, Title = "Week A item", WeekSlot = "A" };
+        var weekB = new TemplateItemDto { Id = "b", TemplateId = "tpl-1", DayOfWeek = 0, Title = "Week B item", WeekSlot = "B" };
+        var api = new FakeTemplatesApi([template], [weekA, weekB]);
+        await using var ctx = NewContext(api);
+
+        var cut = ctx.Render<TemplatesEditor>();
+
+        // Default is week A.
+        Assert.Contains("Week A item", cut.Markup);
+        Assert.DoesNotContain("Week B item", cut.Markup);
+
+        // Switch to week B.
+        cut.FindAll("button").First(b => b.TextContent.Trim() == "Week B").Click();
+        Assert.Contains("Week B item", cut.Markup);
+        Assert.DoesNotContain("Week A item", cut.Markup);
+    }
+
+    [Fact]
     public async Task Locked_template_hides_add_affordances()
     {
         var api = new FakeTemplatesApi(

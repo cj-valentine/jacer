@@ -27,12 +27,23 @@
                       Variant="Variant.Outlined"
                       Margin="Margin.Dense"
                       Immediate="true"
-                      Style="min-width: 240px;"
+                      Style="min-width: 220px;"
                       OnKeyDown="OnNewNameKeyDown" />
+        <MudSelect T="Cadence" @bind-Value="_newCadence" Label="Cadence"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 150px;">
+            <MudSelectItem Value="Cadence.Weekly">Weekly</MudSelectItem>
+            <MudSelectItem Value="Cadence.Fortnightly">Fortnightly</MudSelectItem>
+        </MudSelect>
+        @if (_newCadence == Cadence.Fortnightly)
+        {
+            <MudDatePicker @bind-Date="_newWeekAStart" Label="Week A starts"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Style="min-width: 170px;" />
+        }
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                   Disabled="@(string.IsNullOrWhiteSpace(_newName))"
+                   Disabled="@(!CanCreate)"
                    OnClick="CreateTemplateAsync">
-            Create (weekly)
+            Create
         </MudButton>
         <MudButton Variant="Variant.Text" OnClick="CancelCreate">
             Cancel
@@ -105,10 +116,20 @@ else
 
     @if (_selected is not null && _selected.Cadence == Cadence.Fortnightly)
     {
-        <MudAlert Severity="Severity.Info" Class="mb-4">
-            This is a fortnightly template. A/B week editing lands in the next increment;
-            for now the grid shows week-A items only.
-        </MudAlert>
+        <div class="d-flex gap-2 align-center mb-4">
+            <MudText Typo="Typo.body2">Editing week:</MudText>
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                <MudButton Color="@(_weekSlot == "A" ? Color.Primary : Color.Default)"
+                           Variant="@(_weekSlot == "A" ? Variant.Filled : Variant.Outlined)"
+                           OnClick="@(() => SetWeekSlot("A"))">Week A</MudButton>
+                <MudButton Color="@(_weekSlot == "B" ? Color.Primary : Color.Default)"
+                           Variant="@(_weekSlot == "B" ? Variant.Filled : Variant.Outlined)"
+                           OnClick="@(() => SetWeekSlot("B"))">Week B</MudButton>
+            </MudButtonGroup>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Items added here belong to week @_weekSlot. (An item can only sit in one week.)
+            </MudText>
+        </div>
     }
 
     <div style="overflow-x: auto;">
@@ -206,6 +227,15 @@ else
     private bool _creating;
     private bool _seeding;
     private string _newName = "";
+    private Cadence _newCadence = Cadence.Weekly;
+    private DateTime? _newWeekAStart;
+
+    // Which week the fortnightly grid is currently editing/showing.
+    private string _weekSlot = "A";
+
+    private bool CanCreate =>
+        !string.IsNullOrWhiteSpace(_newName)
+        && (_newCadence != Cadence.Fortnightly || _newWeekAStart is not null);
 
     // A gentle starter routine: weekday planning + a couple of deep-work blocks
     // and a Friday review, spread across the time-of-day bands so a new user
@@ -226,6 +256,8 @@ else
     {
         _creating = false;
         _newName = "";
+        _newCadence = Cadence.Weekly;
+        _newWeekAStart = null;
     }
 
     private int? _addDay;
@@ -289,15 +321,33 @@ else
         }
     }
 
-    // Week-A / weekly items only for now (week_slot "B" hidden until the toggle lands).
     private IEnumerable<TemplateItemDto> ItemsIn(int day, TimeBand band) =>
         _items.Where(i => i.DayOfWeek == day
                           && TimeBands.BandOf(i.DefaultTime) == band
-                          && i.WeekSlot is null or "A");
+                          && MatchesCurrentWeek(i));
+
+    // Weekly: every item shows. Fortnightly: show the selected week's items;
+    // an item with no week_slot fires every week, so it shows in both.
+    private bool MatchesCurrentWeek(TemplateItemDto i)
+    {
+        if (_selected?.Cadence != Cadence.Fortnightly)
+        {
+            return true;
+        }
+        return i.WeekSlot is null || i.WeekSlot == _weekSlot;
+    }
+
+    private void SetWeekSlot(string slot)
+    {
+        _weekSlot = slot;
+        CancelAdd();
+    }
 
     private async Task OnNewNameKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_newName))
+        // Enter is a shortcut only for the simple weekly case; fortnightly needs
+        // the extra date, so let the user complete the form and click Create.
+        if (e.Key == "Enter" && _newCadence == Cadence.Weekly && CanCreate)
         {
             await CreateTemplateAsync();
         }
@@ -305,16 +355,24 @@ else
 
     private async Task CreateTemplateAsync()
     {
-        var name = _newName.Trim();
-        if (name.Length == 0)
+        if (!CanCreate)
         {
             return;
         }
+        var name = _newName.Trim();
+        var payload = new TemplateCreateDto
+        {
+            Name = name,
+            Cadence = _newCadence,
+            WeekAStartDate = _newCadence == Cadence.Fortnightly
+                ? _newWeekAStart!.Value.ToString("yyyy-MM-dd")
+                : null,
+        };
         try
         {
-            var created = await Api.CreateTemplateAsync(new TemplateCreateDto { Name = name });
-            _creating = false;
-            _newName = "";
+            var created = await Api.CreateTemplateAsync(payload);
+            CancelCreate();
+            _weekSlot = "A";
             await ReloadTemplatesAsync();
             await SelectTemplateAsync(created.Id);
             Snackbar.Add($"Created “{name}”", Severity.Success);
@@ -394,6 +452,8 @@ else
                 DayOfWeek = day,
                 Title = title,
                 DefaultTime = TimeBands.DefaultTimeFor(band),
+                // week_slot is only valid on fortnightly templates (backend rejects it on weekly).
+                WeekSlot = _selected?.Cadence == Cadence.Fortnightly ? _weekSlot : null,
             });
             _items.Add(created);
             _addTitle = "";  // keep the field open for rapid entry in the same cell
