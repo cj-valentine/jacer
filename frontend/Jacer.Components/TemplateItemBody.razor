@@ -1,0 +1,127 @@
+@* Editable body for a template item, reused by the untimed tick-off strip and
+   the day timeline (fixes the "not editable after creation" bug). No drag
+   wrapper of its own — the strip and the timeline each provide their own. *@
+
+<div class="template-item-body">
+    <div class="d-flex align-center gap-1">
+        @if (_editingTitle)
+        {
+            <MudTextField T="string" @bind-Value="_title" Immediate="true" AutoFocus="true"
+                          Variant="Variant.Text" Margin="Margin.Dense" Class="flex-grow-1"
+                          OnKeyDown="OnTitleKeyDown" OnBlur="CommitTitleAsync" />
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="flex-grow-1 template-item-body__title"
+                     @ondblclick="BeginTitleEdit">@Item.Title</MudText>
+        }
+
+        @if (Interactive)
+        {
+            <MudMenu Icon="@Icons.Material.Filled.Label" Size="Size.Small" Dense="true" aria-label="Category">
+                @foreach (var cat in Categories)
+                {
+                    <MudMenuItem OnClick="@(() => OnAssignCategory.InvokeAsync(new TemplateCategoryAssignment(Item.Id, cat.Id)))">
+                        <div class="d-flex align-center gap-2">
+                            <span class="cat-swatch" style="background:@cat.Colour"></span>@cat.Name
+                        </div>
+                    </MudMenuItem>
+                }
+                @if (Categories.Count > 0)
+                {
+                    <MudDivider />
+                }
+                <MudMenuItem OnClick="@(() => OnAssignCategory.InvokeAsync(new TemplateCategoryAssignment(Item.Id, null)))">Uncategorised</MudMenuItem>
+            </MudMenu>
+            <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small"
+                           aria-label="Remove item" OnClick="@(() => OnDelete.InvokeAsync(Item.Id))" />
+        }
+    </div>
+
+    @if (_editingDuration)
+    {
+        <MudNumericField T="int" @bind-Value="_duration" Immediate="true" AutoFocus="true"
+                         Min="5" Max="600" Step="5" Variant="Variant.Text" Margin="Margin.Dense"
+                         Style="max-width: 90px;" OnKeyDown="OnDurationKeyDown" OnBlur="CommitDurationAsync" />
+    }
+    else
+    {
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="template-item-body__dur"
+                 @ondblclick="BeginDurationEdit">
+            @(Item.DefaultTime is not null ? $"{Item.DefaultTime} · " : "")@(Item.DurationMinutes) min@(_category is not null ? $" · {_category.Name}" : "")
+        </MudText>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required TemplateItemDto Item { get; set; }
+    [Parameter] public IReadOnlyList<CategoryDto> Categories { get; set; } = [];
+    [Parameter] public bool Interactive { get; set; } = true;
+
+    [Parameter] public EventCallback<TemplateTitleEdit> OnEditTitle { get; set; }
+    [Parameter] public EventCallback<TemplateDurationEdit> OnEditDuration { get; set; }
+    [Parameter] public EventCallback<TemplateCategoryAssignment> OnAssignCategory { get; set; }
+    [Parameter] public EventCallback<string> OnDelete { get; set; }
+
+    private bool _editingTitle;
+    private string _title = "";
+    private bool _editingDuration;
+    private int _duration;
+
+    private CategoryDto? _category =>
+        Item.CategoryId is null ? null : Categories.FirstOrDefault(c => c.Id == Item.CategoryId);
+
+    private void BeginTitleEdit()
+    {
+        if (!Interactive) { return; }
+        _title = Item.Title;
+        _editingTitle = true;
+    }
+
+    private async Task OnTitleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") { await CommitTitleAsync(); }
+        else if (e.Key == "Escape") { _editingTitle = false; }
+    }
+
+    private async Task CommitTitleAsync()
+    {
+        if (!_editingTitle) { return; }
+        _editingTitle = false;
+        var title = _title.Trim();
+        if (title.Length > 0 && title != Item.Title)
+        {
+            await OnEditTitle.InvokeAsync(new TemplateTitleEdit(Item.Id, title));
+        }
+    }
+
+    private void BeginDurationEdit()
+    {
+        if (!Interactive) { return; }
+        _duration = Item.DurationMinutes;
+        _editingDuration = true;
+    }
+
+    private async Task OnDurationKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") { await CommitDurationAsync(); }
+        else if (e.Key == "Escape") { _editingDuration = false; }
+    }
+
+    private async Task CommitDurationAsync()
+    {
+        if (!_editingDuration) { return; }
+        _editingDuration = false;
+        if (_duration > 0 && _duration != Item.DurationMinutes)
+        {
+            await OnEditDuration.InvokeAsync(new TemplateDurationEdit(Item.Id, _duration));
+        }
+    }
+}
+
+<style>
+    .template-item-body__title, .template-item-body__dur { cursor: text; }
+    .template-item-body .cat-swatch {
+        display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto;
+    }
+</style>

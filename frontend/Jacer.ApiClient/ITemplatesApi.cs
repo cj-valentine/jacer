@@ -38,5 +38,12 @@ public interface ITemplatesApi
         TemplateItemUpdateDto payload,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Set (or clear, with null) a template item's category. A dedicated call
+    /// because clearing needs an explicit <c>category_id: null</c>, which the
+    /// null-omitting partial-update DTO can't express.
+    /// </summary>
+    Task<TemplateItemDto> SetItemCategoryAsync(string itemId, string? categoryId, CancellationToken ct = default);
+
     Task DeleteItemAsync(string itemId, CancellationToken ct = default);
 }

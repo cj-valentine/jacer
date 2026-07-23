@@ -8,6 +8,11 @@ namespace Jacer.Components;
 /// </summary>
 public static class TimelineGrid
 {
+    /// <summary>Weekday labels indexed by the backend's day_of_week (0 = Monday … 6 = Sunday).</summary>
+    public static readonly IReadOnlyList<string> DayLabels =
+        ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+
     /// <summary>Minutes since midnight for an <c>HH:MM</c> string; null if absent/unparseable.</summary>
     public static int? MinutesFromHhMm(string? hhmm)
     {
