@@ -23,8 +23,9 @@ public class BoardSmokeTests : PageTest
     {
         await Page.GotoAsync(BaseUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
 
-        // Board heading and the drag-and-drop container render.
-        await Expect(Page.GetByText("Board", new() { Exact = true })).ToBeVisibleAsync();
+        // Board heading and the drag-and-drop container render. Use the heading
+        // role — the app bar also has a "Board" nav link, so plain text is ambiguous.
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Board" })).ToBeVisibleAsync();
         await Expect(Page.Locator(".mud-drop-container")).ToBeVisibleAsync();
 
         // The quick-add field is disabled until the board's first load completes;

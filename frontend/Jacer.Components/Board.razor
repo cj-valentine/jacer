@@ -33,23 +33,24 @@ else if (_error is not null)
 {
     <MudAlert Severity="Severity.Error">@_error</MudAlert>
 }
-else if (_items.Count == 0)
-{
-    <MudPaper Outlined="true" Class="pa-6 d-flex flex-column align-center gap-3">
-        <MudIcon Icon="@Icons.Material.Filled.Inbox" Size="Size.Large" Color="Color.Primary" />
-        <MudText Typo="Typo.h6">Nothing on the board yet</MudText>
-        <MudText Typo="Typo.body2" Align="Align.Center" Style="max-width: 480px;">
-            Add a task above, or set up a routine in Templates — lock a template and its
-            items appear here automatically each day.
-        </MudText>
-        <MudButton Href="/templates" Variant="Variant.Filled" Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.CalendarViewWeek">
-            Set up templates
-        </MudButton>
-    </MudPaper>
-}
 else
 {
+    @if (_items.Count == 0)
+    {
+        <MudPaper Outlined="true" Class="pa-6 mb-4 d-flex flex-column align-center gap-3">
+            <MudIcon Icon="@Icons.Material.Filled.Inbox" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Nothing on the board yet</MudText>
+            <MudText Typo="Typo.body2" Align="Align.Center" Style="max-width: 480px;">
+                Add a task above, or set up a routine in Templates — lock a template and its
+                items appear here automatically each day.
+            </MudText>
+            <MudButton Href="/templates" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.CalendarViewWeek">
+                Set up templates
+            </MudButton>
+        </MudPaper>
+    }
+
     <MudDropContainer T="BoardItem" @ref="_container" Items="_items"
                       ItemsSelector="@((item, zone) => item.Status == ParseZone(zone))"
                       ItemDropped="OnItemDropped"

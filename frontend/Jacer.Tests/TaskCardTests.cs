@@ -60,4 +60,54 @@ public class TaskCardTests
         Assert.Equal(task.Id, captured!.Value.TaskId);
         Assert.Equal(TaskStatus.Today, captured.Value.Target);
     }
+
+    [Fact]
+    public async Task Diverged_task_shows_the_diverged_dot()
+    {
+        await using var ctx = NewContext();
+
+        var diverged = ctx.Render<TaskCard>(p => p.Add(c => c.Task, TestData.DivergedTask("Edited")));
+        Assert.Single(diverged.FindAll("span.diverged-dot"));
+
+        var plain = ctx.Render<TaskCard>(p => p.Add(c => c.Task, TestData.Task("Plain", TaskStatus.Today)));
+        Assert.Empty(plain.FindAll("span.diverged-dot"));
+    }
+
+    [Fact]
+    public async Task Bump_menu_items_invoke_OnBump_with_the_right_offset()
+    {
+        await using var ctx = NewContext();
+        var task = TestData.Task("Reschedule", TaskStatus.Today);
+        TaskBump? captured = null;
+
+        var cut = ctx.Render<TaskCard>(p => p
+            .Add(c => c.Task, task)
+            .Add(c => c.OnBump, EventCallback.Factory.Create<TaskBump>(this, b => captured = b)));
+
+        cut.FindAll("button").First(b => b.TextContent.Contains("Next week")).Click();
+
+        Assert.NotNull(captured);
+        Assert.Equal(task.Id, captured!.Value.TaskId);
+        Assert.Equal(7, captured.Value.DaysAhead);
+    }
+
+    [Fact]
+    public async Task Reset_action_only_shows_for_diverged_tasks_and_invokes_OnReset()
+    {
+        await using var ctx = NewContext();
+        string? resetId = null;
+
+        // A plain (non-diverged) task shows no reset action.
+        var plain = ctx.Render<TaskCard>(p => p.Add(c => c.Task, TestData.Task("Plain", TaskStatus.Today)));
+        Assert.DoesNotContain(plain.FindAll("button"), b => b.TextContent.Contains("Reset to template"));
+
+        var task = TestData.DivergedTask("Edited");
+        var cut = ctx.Render<TaskCard>(p => p
+            .Add(c => c.Task, task)
+            .Add(c => c.OnReset, EventCallback.Factory.Create<string>(this, id => resetId = id)));
+
+        cut.FindAll("button").First(b => b.TextContent.Contains("Reset to template")).Click();
+
+        Assert.Equal(task.Id, resetId);
+    }
 }
