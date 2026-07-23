@@ -108,6 +108,16 @@ public sealed class TemplatesApiClient(HttpClient http) : ITemplatesApi
         return (await response.Content.ReadFromJsonAsync<TemplateItemDto>(JacerJson.Options, ct))!;
     }
 
+    public async Task<TemplateItemDto> SetItemCategoryAsync(string itemId, string? categoryId, CancellationToken ct = default)
+    {
+        // Explicit body so category_id is always sent, even when null (clear).
+        var payload = new Dictionary<string, object?> { ["category_id"] = categoryId };
+        var response = await http.PatchAsJsonAsync(
+            $"api/template-items/{itemId}", payload, JacerJson.WriteNulls, ct);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<TemplateItemDto>(JacerJson.Options, ct))!;
+    }
+
     public async Task DeleteItemAsync(string itemId, CancellationToken ct = default)
     {
         var response = await http.DeleteAsync($"api/template-items/{itemId}", ct);

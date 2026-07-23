@@ -1,0 +1,65 @@
+.week-strip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.week-strip__days {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 4px;
+    justify-content: space-between;
+}
+
+.week-day {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--mud-palette-text-primary);
+    cursor: pointer;
+    font: inherit;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.week-day:hover {
+    background: var(--mud-palette-action-default-hover);
+}
+
+.week-day__dow {
+    font-size: 0.68rem;
+    color: var(--mud-palette-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.week-day__num {
+    font-size: 1.05rem;
+    font-weight: 500;
+    line-height: 1;
+}
+
+/* Today: a quiet accent ring. */
+.week-day--today {
+    border-color: var(--mud-palette-primary);
+}
+
+.week-day--today .week-day__num {
+    color: var(--mud-palette-primary);
+}
+
+/* Selected: filled accent — wins over the today ring. */
+.week-day--selected {
+    background: var(--mud-palette-primary);
+    border-color: var(--mud-palette-primary);
+}
+
+.week-day--selected .week-day__dow,
+.week-day--selected .week-day__num {
+    color: var(--mud-palette-primary-text);
+}

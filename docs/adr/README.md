@@ -12,6 +12,8 @@ project's standalone decision history — newer ADRs may supersede older ones.
 | [ADR-004](ADR-004-status-canonical-completion.md) | `status` canonical; `is_completed` derived | Accepted |
 | [ADR-005](ADR-005-obsidian-native-daily-logs.md) | Obsidian-native daily logs + stale-day sweep | Accepted |
 | [ADR-006](ADR-006-reset-to-template-endpoint.md) | `reset-to-template` endpoint (frozen-contract escape) | Accepted |
+| [ADR-007](ADR-007-day-centric-board.md) | Day-centric board + custom DayTimeline | Accepted |
+| [ADR-008](ADR-008-categories-api.md) | Categories API (second frozen-contract escape) | Accepted |
 
 ## Format
 

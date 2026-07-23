@@ -34,9 +34,11 @@ internal sealed class FakeTemplatesApi : ITemplatesApi
             Id = Guid.NewGuid().ToString(),
             TemplateId = templateId,
             DayOfWeek = payload.DayOfWeek,
+            WeekSlot = payload.WeekSlot,
             Title = payload.Title,
             DurationMinutes = payload.DurationMinutes ?? 30,
             DefaultTime = payload.DefaultTime,
+            CategoryId = payload.CategoryId,
         };
         _items.Add(created);
         return Task.FromResult(created);
@@ -73,8 +75,30 @@ internal sealed class FakeTemplatesApi : ITemplatesApi
     public Task<TemplateItemDto?> GetItemAsync(string itemId, CancellationToken ct = default) =>
         Task.FromResult(_items.FirstOrDefault(i => i.Id == itemId));
 
-    public Task<TemplateItemDto> UpdateItemAsync(string itemId, TemplateItemUpdateDto payload, CancellationToken ct = default) =>
-        Task.FromResult(_items.First(i => i.Id == itemId));
+    public List<TemplateItemUpdateDto> ItemUpdates { get; } = [];
+
+    public Task<TemplateItemDto> UpdateItemAsync(string itemId, TemplateItemUpdateDto p, CancellationToken ct = default)
+    {
+        ItemUpdates.Add(p);
+        var i = _items.FindIndex(x => x.Id == itemId);
+        _items[i] = _items[i] with
+        {
+            Title = p.Title ?? _items[i].Title,
+            DurationMinutes = p.DurationMinutes ?? _items[i].DurationMinutes,
+            DefaultTime = p.DefaultTime ?? _items[i].DefaultTime,
+            DayOfWeek = p.DayOfWeek ?? _items[i].DayOfWeek,
+            WeekSlot = p.WeekSlot ?? _items[i].WeekSlot,
+            CategoryId = p.CategoryId ?? _items[i].CategoryId,
+        };
+        return Task.FromResult(_items[i]);
+    }
+
+    public Task<TemplateItemDto> SetItemCategoryAsync(string itemId, string? categoryId, CancellationToken ct = default)
+    {
+        var i = _items.FindIndex(x => x.Id == itemId);
+        _items[i] = _items[i] with { CategoryId = categoryId };
+        return Task.FromResult(_items[i]);
+    }
 
     public Task DeleteItemAsync(string itemId, CancellationToken ct = default)
     {

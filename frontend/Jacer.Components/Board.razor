@@ -1,13 +1,16 @@
 @inject ITasksApi Api
 @inject IDaysApi Days
+@inject ICategoriesApi Cats
+@inject BoardUiState Ui
 @inject ISnackbar Snackbar
 
-@* The board is driven by status. Per ADR-004, status is canonical and the
-   backend derives is_completed from it, so we only ever read/write status here. *@
+@* Day-centric board (ADR-007). A global backlog plus a selected day that owns a
+   task list and a schedule timeline. Placement is keyed off scheduled_date, never
+   off status — day navigation never mutates status. *@
 
 <MudText Typo="Typo.h5" Class="mb-4">Board</MudText>
 
-@* Quick-add: POST {title} on Enter, clear the field optimistically. *@
+@* Quick-add: creates an undated backlog task. *@
 <MudTextField @bind-Value="_newTitle"
               Immediate="true"
               Placeholder="Add a task and press Enter…"
@@ -17,13 +20,6 @@
               Class="mb-4"
               Disabled="_loading"
               OnKeyDown="OnQuickAddKeyDown" />
-
-@* Today cap bar — 8h (480 min). Yellow at 80%, red at 100%. *@
-<div class="mb-1 d-flex justify-space-between align-center">
-    <MudText Typo="Typo.caption">Today: @_todayMinutes / @CapMinutes min</MudText>
-    <MudText Typo="Typo.caption" Color="@CapColour">@(_todayMinutes * 100 / CapMinutes)%</MudText>
-</div>
-<MudProgressLinear Color="@CapColour" Value="@CapValue" Class="mb-6" Size="Size.Large" Rounded="true" />
 
 @if (_loading)
 {
@@ -35,86 +31,269 @@ else if (_error is not null)
 }
 else
 {
-    @if (_items.Count == 0)
+    <MudPaper Outlined="true" Class="pa-3 mb-4">
+        <WeekStrip WeekStart="_weekStart" SelectedDate="_selectedDate" Today="_today"
+                   OnSelectDay="SelectDay" OnPrevWeek="PrevWeek" OnNextWeek="NextWeek" />
+    </MudPaper>
+
+    <div class="d-flex justify-space-between align-center mb-1">
+        <MudText Typo="Typo.subtitle1">@_selectedDate.ToString("dddd d MMMM yyyy")</MudText>
+        <MudText Typo="Typo.caption" Color="@CapColour">@_dayMinutes / @CapMinutes min</MudText>
+    </div>
+    <MudProgressLinear Color="@CapColour" Value="@CapValue" Class="mb-4" Size="Size.Small" Rounded="true" />
+
+    <div class="d-flex gap-4 flex-wrap mb-6">
+        @* Day list — untimed tasks for the selected day. Also a drop target:
+           dropping a card here schedules it to this day (untimed). *@
+        <MudPaper Outlined="true" Class="pa-3 d-flex flex-column" Style="min-width: 280px; flex: 1;">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">To do — @_selectedDate.ToString("ddd d MMM")</MudText>
+            <div class="board-dropzone flex-grow-1" style="min-height: 120px;"
+                 @ondragover:preventDefault="true" @ondragover="() => { }"
+                 @ondrop="OnDropOnDayListAsync">
+                @if (_dayUntimed.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Nothing untimed for this day.</MudText>
+                }
+                @foreach (var t in _dayUntimed)
+                {
+                    @TaskCardFor(t, showDateChip: false)
+                }
+            </div>
+        </MudPaper>
+
+        @* Day timeline — timed tasks for the selected day. *@
+        <MudPaper Outlined="true" Class="pa-3 d-flex flex-column" Style="min-width: 320px; flex: 1;">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Schedule</MudText>
+            <div class="board-timeline-scroll">
+                <DayTimeline Items="_timelineItems"
+                             OnMove="OnTimelineMoveAsync"
+                             OnResize="OnTimelineResizeAsync"
+                             OnExternalDrop="OnTimelineExternalDropAsync">
+                    <ItemContent>
+                        <div class="d-flex align-center" style="gap: 2px;">
+                            <span class="flex-grow-1 timeline-item__title">@context.Title</span>
+                            <MudIconButton Icon="@Icons.Material.Filled.CheckCircleOutline" Size="Size.Small"
+                                           Color="Color.Success" aria-label="Complete"
+                                           OnClick="@(() => CompleteAsync(context.Id))" />
+                            <MudMenu Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Dense="true"
+                                     aria-label="Reschedule">
+                                @foreach (var (label, date) in RescheduleOptions())
+                                {
+                                    <MudMenuItem OnClick="@(() => RescheduleAsync(context.Id, date))">@label</MudMenuItem>
+                                }
+                                <MudDivider />
+                                <MudMenuItem OnClick="@(() => RescheduleAsync(context.Id, null))">No date (Backlog)</MudMenuItem>
+                            </MudMenu>
+                            <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small"
+                                           aria-label="Delete" OnClick="@(() => DeleteAsync(context.Id))" />
+                        </div>
+                    </ItemContent>
+                </DayTimeline>
+            </div>
+        </MudPaper>
+    </div>
+
+    @* ── Backlog ─────────────────────────────────────────────────────────── *@
+    <div class="d-flex justify-space-between align-center mb-2">
+        <MudText Typo="Typo.h6">Backlog</MudText>
+        @if (_addingCategory)
+        {
+            <div class="d-flex gap-1 align-center">
+                <MudTextField @bind-Value="_newCategoryName" Immediate="true" AutoFocus="true"
+                              Placeholder="Category name…" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Style="min-width: 180px;" OnKeyDown="OnNewCategoryKeyDown" />
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                           OnClick="CreateCategoryAsync">Add</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => _addingCategory = false)">Cancel</MudButton>
+            </div>
+        }
+        else
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.NewLabel"
+                       OnClick="@(() => _addingCategory = true)">New category</MudButton>
+        }
+    </div>
+
+    @if (_backlog.Count == 0 && _upcoming.Count == 0)
     {
-        <MudPaper Outlined="true" Class="pa-6 mb-4 d-flex flex-column align-center gap-3">
+        <MudPaper Outlined="true" Class="pa-6 d-flex flex-column align-center gap-3">
             <MudIcon Icon="@Icons.Material.Filled.Inbox" Size="Size.Large" Color="Color.Primary" />
-            <MudText Typo="Typo.h6">Nothing on the board yet</MudText>
             <MudText Typo="Typo.body2" Align="Align.Center" Style="max-width: 480px;">
-                Add a task above, or set up a routine in Templates — lock a template and its
-                items appear here automatically each day.
+                Nothing in the backlog. Add a task above, or set up a routine in Templates.
             </MudText>
-            <MudButton Href="/templates" Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.CalendarViewWeek">
-                Set up templates
-            </MudButton>
         </MudPaper>
     }
 
-    <MudDropContainer T="BoardItem" @ref="_container" Items="_items"
-                      ItemsSelector="@((item, zone) => item.Status == ParseZone(zone))"
-                      ItemDropped="OnItemDropped"
-                      Class="d-flex gap-4 flex-wrap">
-        <ChildContent>
-            @foreach (var status in BoardColumns.Order)
+    @foreach (var group in BacklogGroups())
+    {
+        <MudPaper Outlined="true" Class="pa-2 mb-3">
+            <div class="board-group-head d-flex align-center gap-2" @onclick="@(() => Ui.ToggleCategory(group.Key))">
+                <MudIcon Icon="@(Ui.IsCategoryCollapsed(group.Key) ? Icons.Material.Filled.ChevronRight : Icons.Material.Filled.ExpandMore)"
+                         Size="Size.Small" />
+                @if (group.Colour is not null)
+                {
+                    <span class="cat-swatch" style="background:@group.Colour"></span>
+                }
+                <MudText Typo="Typo.subtitle2">@group.Name</MudText>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@group.Tasks.Count</MudChip>
+            </div>
+            @if (!Ui.IsCategoryCollapsed(group.Key))
             {
-                <MudPaper Outlined="true" Class="pa-3 d-flex flex-column" Style="min-width: 280px; flex: 1;">
-                    <div class="d-flex justify-space-between align-center mb-3">
-                        <MudText Typo="Typo.subtitle1">@BoardColumns.Label(status)</MudText>
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text">
-                            @_items.Count(i => i.Status == status)
-                        </MudChip>
-                    </div>
-                    <MudDropZone T="BoardItem" Identifier="@status.ToString()"
-                                 Class="flex-grow-1" Style="min-height: 120px;" />
-                </MudPaper>
+                <div class="mt-2">
+                    @foreach (var t in group.Tasks)
+                    {
+                        @TaskCardFor(t, showDateChip: false)
+                    }
+                </div>
             }
-        </ChildContent>
-        <ItemRenderer>
-            <TaskCard Task="context.Task"
-                      MoveTargets="BoardColumns.MoveTargetsFor(context.Status)"
-                      OnMove="OnMoveAsync"
-                      OnBump="OnBumpAsync"
-                      OnReset="OnResetAsync" />
-        </ItemRenderer>
-    </MudDropContainer>
+        </MudPaper>
+    }
+
+    @* Upcoming — future-dated tasks. Expanded by default; fully interactive. *@
+    @if (_upcoming.Count > 0)
+    {
+        <MudPaper Outlined="true" Class="pa-2 mb-3">
+            <div class="board-group-head d-flex align-center gap-2" @onclick="@(() => Ui.UpcomingExpanded = !Ui.UpcomingExpanded)">
+                <MudIcon Icon="@(Ui.UpcomingExpanded ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.ChevronRight)"
+                         Size="Size.Small" />
+                <MudIcon Icon="@Icons.Material.Filled.Upcoming" Size="Size.Small" Color="Color.Primary" />
+                <MudText Typo="Typo.subtitle2">Upcoming</MudText>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@_upcoming.Count</MudChip>
+            </div>
+            @if (Ui.UpcomingExpanded)
+            {
+                <div class="mt-2">
+                    @foreach (var t in _upcoming)
+                    {
+                        @TaskCardFor(t, showDateChip: true)
+                    }
+                </div>
+            }
+        </MudPaper>
+    }
 }
 
 @code {
     private const int CapMinutes = 8 * 60;
 
-    private MudDropContainer<BoardItem>? _container;
-    // Same list reference for the lifetime of the component — MudDropContainer
-    // tracks this instance and re-renders on Refresh(). Replacing the reference
-    // makes newly added items fail to render, so always mutate in place.
-    private readonly List<BoardItem> _items = [];
+    private readonly List<TaskDto> _tasks = [];
+    private readonly List<CategoryDto> _categories = [];
+
+    private DateTime _today = DateTime.Today;
+    private DateTime _selectedDate = DateTime.Today;
+    private DateTime _weekStart = WeekStrip.MondayOf(DateTime.Today);
+
     private string _newTitle = "";
-    private int _todayMinutes;
+    private bool _addingCategory;
+    private string _newCategoryName = "";
     private bool _loading = true;
     private string? _error;
 
-    private double CapValue => Math.Min(100, _todayMinutes * 100.0 / CapMinutes);
+    // The task id currently being dragged from a list (for list/timeline drops).
+    private string? _dragTaskId;
 
-    private Color CapColour => _todayMinutes >= CapMinutes
+    private string SelectedKey => _selectedDate.ToString("yyyy-MM-dd");
+
+    // ── Derived views ─────────────────────────────────────────────────────────
+    private IEnumerable<TaskDto> Active => _tasks.Where(t => t.Status != TaskStatus.Done);
+
+    private List<TaskDto> _dayTasks = [];
+    private List<TaskDto> _dayUntimed = [];
+    private List<TimelineItem> _timelineItems = [];
+    private List<TaskDto> _backlog = [];
+    private List<TaskDto> _upcoming = [];
+
+    private int _dayMinutes;
+    private double CapValue => Math.Min(100, _dayMinutes * 100.0 / CapMinutes);
+    private Color CapColour => _dayMinutes >= CapMinutes
         ? Color.Error
-        : _todayMinutes >= CapMinutes * 0.8
-            ? Color.Warning
-            : Color.Primary;
+        : _dayMinutes >= CapMinutes * 0.8 ? Color.Warning : Color.Primary;
 
-    private static TaskStatus ParseZone(string zone) => Enum.Parse<TaskStatus>(zone);
+    private void Recompute()
+    {
+        _dayTasks = Active
+            .Where(t => (t.ScheduledDate ?? t.InstanceDate) == SelectedKey)
+            .ToList();
+        _dayUntimed = _dayTasks.Where(t => t.ScheduledTime is null)
+            .OrderBy(t => t.Title).ToList();
+        _timelineItems = _dayTasks.Where(t => t.ScheduledTime is not null)
+            .Select(t => new TimelineItem
+            {
+                Id = t.Id,
+                Title = t.Title,
+                StartMinute = TimelineGrid.MinutesFromHhMm(t.ScheduledTime) ?? 8 * 60,
+                DurationMinutes = t.DurationMinutes,
+                Colour = CategoryColour(t.CategoryId),
+                Diverged = t.Diverged,
+            })
+            .ToList();
 
+        _backlog = Active.Where(t => t.ScheduledDate is null).OrderBy(t => t.Title).ToList();
+        _upcoming = Active
+            .Where(t => t.ScheduledDate is not null
+                        && string.CompareOrdinal(t.ScheduledDate, _today.ToString("yyyy-MM-dd")) > 0)
+            .OrderBy(t => t.ScheduledDate).ThenBy(t => t.ScheduledTime ?? "").ToList();
+
+        _dayMinutes = _dayTasks.Sum(t => t.DurationMinutes);
+    }
+
+    private string? CategoryColour(string? categoryId) =>
+        categoryId is null ? null : _categories.FirstOrDefault(c => c.Id == categoryId)?.Colour;
+
+    private sealed record BacklogGroup(string Key, string Name, string? Colour, List<TaskDto> Tasks);
+
+    private IEnumerable<BacklogGroup> BacklogGroups()
+    {
+        foreach (var cat in _categories)
+        {
+            var tasks = _backlog.Where(t => t.CategoryId == cat.Id).ToList();
+            if (tasks.Count > 0)
+            {
+                yield return new BacklogGroup(cat.Id, cat.Name, cat.Colour, tasks);
+            }
+        }
+        // Uncategorised (or referencing a category that no longer exists) — last.
+        var known = _categories.Select(c => c.Id).ToHashSet();
+        var uncategorised = _backlog.Where(t => t.CategoryId is null || !known.Contains(t.CategoryId)).ToList();
+        if (uncategorised.Count > 0)
+        {
+            yield return new BacklogGroup("", "Uncategorised", null, uncategorised);
+        }
+    }
+
+    private IEnumerable<(string Label, string Date)> RescheduleOptions()
+    {
+        for (var i = 0; i < 7; i++)
+        {
+            var date = _today.AddDays(i);
+            var label = i switch { 0 => "Today", 1 => "Tomorrow", _ => date.ToString("ddd d MMM") };
+            yield return (label, date.ToString("yyyy-MM-dd"));
+        }
+    }
+
+    private RenderFragment TaskCardFor(TaskDto t, bool showDateChip) => @<DayTaskCard
+        Task="t" Categories="_categories" Today="_today" ShowDateChip="showDateChip"
+        OnComplete="CompleteAsync" OnDelete="DeleteAsync"
+        OnReschedule="r => RescheduleAsync(r.TaskId, r.Date)"
+        OnAssignCategory="a => AssignCategoryAsync(a.TaskId, a.CategoryId)"
+        OnEditTitle="e => EditTitleAsync(e.TaskId, e.Title)"
+        OnReset="OnResetAsync"
+        OnDragStart="id => { _dragTaskId = id; }" />;
+
+    // ── Lifecycle ──────────────────────────────────────────────────────────────
     protected override async Task OnInitializedAsync()
     {
-        // Fire-and-reflect: materialise the next fortnight from locked templates
-        // before loading. Idempotent server-side, so running it on every board
-        // load is safe and keeps upcoming template tasks on the board.
+        _today = DateTime.Today;
+        _selectedDate = _today;
+        _weekStart = WeekStrip.MondayOf(_today);
+
         try
         {
             await Days.MaterialiseHorizonAsync(days: 14);
         }
         catch
         {
-            // Non-fatal: if materialisation is unreachable, still show what's there.
+            // Non-fatal: still show what's there if materialisation is unreachable.
         }
 
         await ReloadAsync();
@@ -124,14 +303,16 @@ else
     {
         try
         {
-            var all = await Api.ListTasksAsync();
-            _items.Clear();
-            _items.AddRange(all
-                .Where(t => BoardColumns.Order.Contains(t.Status))
-                .Select(t => new BoardItem { Task = t, Status = t.Status }));
-            RecalcCap();
+            var tasks = await Api.ListTasksAsync();
+            _tasks.Clear();
+            _tasks.AddRange(tasks);
+
+            var cats = await Cats.ListCategoriesAsync();
+            _categories.Clear();
+            _categories.AddRange(cats);
+
             _error = null;
-            _container?.Refresh();
+            Recompute();
         }
         catch (Exception ex)
         {
@@ -143,24 +324,38 @@ else
         }
     }
 
-    private void RecalcCap() =>
-        _todayMinutes = _items.Where(i => i.Status == TaskStatus.Today).Sum(i => i.Task.DurationMinutes);
+    // ── Navigation ───────────────────────────────────────────────────────────
+    private void SelectDay(DateTime date)
+    {
+        _selectedDate = date;
+        Recompute();
+    }
 
+    private void PrevWeek()
+    {
+        _weekStart = _weekStart.AddDays(-7);
+        Recompute();
+    }
+
+    private void NextWeek()
+    {
+        _weekStart = _weekStart.AddDays(7);
+        Recompute();
+    }
+
+    // ── Mutations ──────────────────────────────────────────────────────────────
     private async Task OnQuickAddKeyDown(KeyboardEventArgs e)
     {
         if (e.Key != "Enter")
         {
             return;
         }
-
         var title = _newTitle.Trim();
         if (title.Length == 0)
         {
             return;
         }
-
-        _newTitle = "";  // optimistic clear
-
+        _newTitle = "";
         try
         {
             await Api.CreateTaskAsync(new TaskCreateDto { Title = title });
@@ -173,70 +368,115 @@ else
         }
     }
 
-    // Drag-and-drop drop handler.
-    private async Task OnItemDropped(MudItemDropInfo<BoardItem> info) =>
-        await ApplyMoveAsync(info.Item!, ParseZone(info.DropzoneIdentifier));
-
-    // Plain-button move handler (kept as an accessible fallback to dragging).
-    private async Task OnMoveAsync(TaskMove move)
+    private async Task CompleteAsync(string taskId)
     {
-        var item = _items.FirstOrDefault(i => i.Task.Id == move.TaskId);
-        if (item is not null)
-        {
-            await ApplyMoveAsync(item, move.Target);
-        }
-    }
-
-    // Bump gesture: push a task's scheduled_date forward and move it to Scheduled.
-    private async Task OnBumpAsync(TaskBump bump)
-    {
-        var item = _items.FirstOrDefault(i => i.Task.Id == bump.TaskId);
-        if (item is null)
-        {
-            return;
-        }
-
-        var date = DateTime.Today.AddDays(bump.DaysAhead).ToString("yyyy-MM-dd");
-        var previous = item.Status;
-        item.Status = TaskStatus.Scheduled;   // optimistic
-        RecalcCap();
-        _container?.Refresh();
-
         try
         {
-            await Api.UpdateTaskAsync(item.Task.Id, new TaskUpdateDto
-            {
-                ScheduledDate = date,
-                Status = TaskStatus.Scheduled,
-            });
-            var label = bump.DaysAhead == 1 ? "tomorrow" : "next week";
-            Snackbar.Add($"Bumped to {label} ({date})", Severity.Success);
+            await Api.UpdateTaskAsync(taskId, new TaskUpdateDto { Status = TaskStatus.Done });
+            await ReloadAsync();
+            Snackbar.Add("Completed", Severity.Success);
         }
         catch (Exception ex)
         {
-            item.Status = previous;   // revert on failure
-            RecalcCap();
-            _container?.Refresh();
-            Snackbar.Add($"Could not bump task: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Could not complete task: {ex.Message}", Severity.Error);
         }
     }
 
-    // Reset a diverged template task back to its template definition (ADR-006).
+    private async Task DeleteAsync(string taskId)
+    {
+        var snapshot = _tasks.FirstOrDefault(t => t.Id == taskId);
+        if (snapshot is null)
+        {
+            return;
+        }
+        try
+        {
+            await Api.DeleteTaskAsync(taskId);
+            await ReloadAsync();
+            Snackbar.Add($"Deleted “{snapshot.Title}”", Severity.Normal, config =>
+            {
+                config.Action = "Undo";
+                config.ActionColor = Color.Primary;
+                config.OnClick = async _ => await UndoDeleteAsync(snapshot);
+            });
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not delete task: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task UndoDeleteAsync(TaskDto snapshot)
+    {
+        try
+        {
+            await Api.CreateTaskAsync(new TaskCreateDto
+            {
+                Title = snapshot.Title,
+                Description = snapshot.Description,
+                Status = snapshot.Status,
+                DurationMinutes = snapshot.DurationMinutes,
+                CategoryId = snapshot.CategoryId,
+                ScheduledTime = snapshot.ScheduledTime,
+                ScheduledDate = snapshot.ScheduledDate,
+            });
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not restore task: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RescheduleAsync(string taskId, string? date)
+    {
+        try
+        {
+            await Api.SetScheduledDateAsync(taskId, date);
+            await ReloadAsync();
+            Snackbar.Add(date is null ? "Moved to Backlog" : "Rescheduled", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not reschedule: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task AssignCategoryAsync(string taskId, string? categoryId)
+    {
+        try
+        {
+            await Api.SetCategoryAsync(taskId, categoryId);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not set category: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task EditTitleAsync(string taskId, string title)
+    {
+        try
+        {
+            await Api.UpdateTaskAsync(taskId, new TaskUpdateDto { Title = title });
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not rename: {ex.Message}", Severity.Error);
+        }
+    }
+
     private async Task OnResetAsync(string taskId)
     {
         try
         {
             var reset = await Api.ResetToTemplateAsync(taskId);
-            if (reset is null)
-            {
-                // 404 race: the task or its template item vanished mid-session.
-                Snackbar.Add("Can't reset — the task or its template is no longer available.", Severity.Warning);
-            }
-            else
-            {
-                Snackbar.Add("Reset to template", Severity.Success);
-            }
-            await ReloadAsync();  // pick up restored definition (and cleared dot)
+            Snackbar.Add(reset is null
+                ? "Can't reset — the task or its template is no longer available."
+                : "Reset to template", reset is null ? Severity.Warning : Severity.Success);
+            await ReloadAsync();
         }
         catch (Exception ex)
         {
@@ -244,29 +484,131 @@ else
         }
     }
 
-    private async Task ApplyMoveAsync(BoardItem item, TaskStatus target)
+    // ── Timeline drag ───────────────────────────────────────────────────────
+    private async Task OnTimelineMoveAsync(TimelineMove move)
     {
-        if (item.Status == target)
+        var idx = _tasks.FindIndex(t => t.Id == move.ItemId);
+        if (idx < 0)
         {
             return;
         }
-
-        var previous = item.Status;
-        item.Status = target;   // optimistic
-        RecalcCap();
-        _container?.Refresh();
+        var previous = _tasks[idx];
+        var time = TimelineGrid.HhMmFromMinutes(move.StartMinute);
+        _tasks[idx] = previous with { ScheduledTime = time };  // optimistic
+        Recompute();
 
         try
         {
-            await Api.UpdateTaskAsync(item.Task.Id, new TaskUpdateDto { Status = target });
-            Snackbar.Add($"Moved to {BoardColumns.Label(target)}", Severity.Success);
+            await Api.UpdateTaskAsync(move.ItemId, new TaskUpdateDto { ScheduledTime = time });
         }
         catch (Exception ex)
         {
-            item.Status = previous;   // revert on failure
-            RecalcCap();
-            _container?.Refresh();
-            Snackbar.Add($"Could not move task: {ex.Message}", Severity.Error);
+            _tasks[idx] = previous;  // revert
+            Recompute();
+            Snackbar.Add($"Could not move: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OnTimelineResizeAsync(TimelineResize resize)
+    {
+        var idx = _tasks.FindIndex(t => t.Id == resize.ItemId);
+        if (idx < 0)
+        {
+            return;
+        }
+        var previous = _tasks[idx];
+        _tasks[idx] = previous with { DurationMinutes = resize.DurationMinutes };  // optimistic
+        Recompute();
+
+        try
+        {
+            await Api.UpdateTaskAsync(resize.ItemId, new TaskUpdateDto { DurationMinutes = resize.DurationMinutes });
+        }
+        catch (Exception ex)
+        {
+            _tasks[idx] = previous;  // revert
+            Recompute();
+            Snackbar.Add($"Could not resize: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OnTimelineExternalDropAsync(int startMinute)
+    {
+        var id = _dragTaskId;
+        _dragTaskId = null;
+        if (id is null)
+        {
+            return;
+        }
+        try
+        {
+            await Api.UpdateTaskAsync(id, new TaskUpdateDto
+            {
+                ScheduledDate = SelectedKey,
+                ScheduledTime = TimelineGrid.HhMmFromMinutes(startMinute),
+            });
+            await ReloadAsync();
+            Snackbar.Add("Scheduled", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not schedule: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OnDropOnDayListAsync()
+    {
+        var id = _dragTaskId;
+        _dragTaskId = null;
+        if (id is null)
+        {
+            return;
+        }
+        await RescheduleAsync(id, SelectedKey);
+    }
+
+    // ── Categories ─────────────────────────────────────────────────────────────
+    private async Task OnNewCategoryKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await CreateCategoryAsync();
+        }
+        else if (e.Key == "Escape")
+        {
+            _addingCategory = false;
+        }
+    }
+
+    private async Task CreateCategoryAsync()
+    {
+        var name = _newCategoryName.Trim();
+        if (name.Length == 0)
+        {
+            return;
+        }
+        try
+        {
+            await Cats.CreateCategoryAsync(new CategoryCreateDto { Name = name });
+            _newCategoryName = "";
+            _addingCategory = false;
+            await ReloadAsync();
+            Snackbar.Add($"Added category “{name}”", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not add category: {ex.Message}", Severity.Error);
         }
     }
 }
+
+<style>
+    .board-timeline-scroll { max-height: 560px; overflow-y: auto; }
+    .board-group-head { cursor: pointer; user-select: none; }
+    .board-dropzone { border-radius: 4px; }
+    .cat-swatch {
+        display: inline-block;
+        width: 12px; height: 12px;
+        border-radius: 3px; flex: 0 0 auto;
+    }
+</style>

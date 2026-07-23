@@ -7,7 +7,7 @@ MarkdownRepository as well.
 
 from datetime import UTC, datetime
 
-from jacer.models import DailyLog, Task, Template, TemplateItem
+from jacer.models import Category, DailyLog, Task, Template, TemplateItem
 
 
 def _now() -> datetime:
@@ -147,6 +147,35 @@ def test_delete_template_item(repository):
     )
     assert repository.delete_template_item("i1") is True
     assert repository.get_template_item("i1") is None
+
+
+# Categories
+
+
+def test_save_and_get_category(repository):
+    repository.save_category(Category(id="c1", name="Admin", colour="#5B7B9A"))
+
+    fetched = repository.get_category("c1")
+    assert fetched is not None
+    assert fetched.name == "Admin"
+    assert fetched.colour == "#5B7B9A"
+
+
+def test_get_unknown_category_returns_none(repository):
+    assert repository.get_category("nope") is None
+
+
+def test_list_categories_returns_all(repository):
+    repository.save_category(Category(id="c1", name="A", colour="#5B7B9A"))
+    repository.save_category(Category(id="c2", name="B", colour="#6E8B6E"))
+    assert len(repository.list_categories()) == 2
+
+
+def test_delete_category(repository):
+    repository.save_category(Category(id="c1", name="A", colour="#5B7B9A"))
+    assert repository.delete_category("c1") is True
+    assert repository.get_category("c1") is None
+    assert repository.delete_category("c1") is False
 
 
 # Daily logs

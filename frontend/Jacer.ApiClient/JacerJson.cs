@@ -18,4 +18,16 @@ public static class JacerJson
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
     };
+
+    /// <summary>
+    /// Like <see cref="Options"/> but writes nulls. Needed for the rare PATCH that
+    /// must send an explicit <c>null</c> to clear a field (e.g. un-assigning a
+    /// category) rather than omitting it — omission means "leave unchanged".
+    /// </summary>
+    public static readonly JsonSerializerOptions WriteNulls = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
+    };
 }

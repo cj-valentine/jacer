@@ -1,0 +1,165 @@
+@* ─────────────────────────────────────────────────────────────────────────
+   DayTimeline — a custom 30-minute schedule grid (ADR-007). Renders timeline
+   items as blocks sized proportional to their duration, with drag-to-move
+   (start time) and drag-to-resize (duration). Both gestures use native HTML5
+   drag onto slot rows, so the wiring is thin DOM events with no custom JS and
+   bUnit can trigger them directly. The board uses one; the template editor
+   stacks seven. The card body is supplied via ItemContent, so each screen
+   renders its own affordances.
+   ───────────────────────────────────────────────────────────────────────── *@
+
+<div class="day-timeline @(Interactive ? "" : "day-timeline--locked")">
+    @if (!string.IsNullOrEmpty(Label))
+    {
+        <div class="day-timeline__header">@Label</div>
+    }
+
+    <div class="day-timeline__grid" style="height: @(SlotCount * RowHeightPx)px;">
+        @* Slot rows: hour gutter + a drop target per slot. *@
+        @for (var slot = 0; slot < SlotCount; slot++)
+        {
+            var index = slot;
+            var startMin = TimelineGrid.SlotStartMinute(StartHour, index, SlotMinutes);
+            var isHour = startMin % 60 == 0;
+            <div class="timeline-slot @(isHour ? "timeline-slot--hour" : "")"
+                 style="top: @(index * RowHeightPx)px; height: @(RowHeightPx)px;"
+                 data-slot-index="@index"
+                 @ondragover:preventDefault="true"
+                 @ondragover="() => { }"
+                 @ondrop="() => OnSlotDropAsync(index)">
+                @if (isHour)
+                {
+                    <span class="timeline-slot__label">@TimelineGrid.HhMmFromMinutes(startMin)</span>
+                }
+            </div>
+        }
+
+        @* Item blocks, absolutely positioned over the slot rows. *@
+        @foreach (var item in Items)
+        {
+            var top = TopPx(item.StartMinute);
+            var height = HeightPx(item.DurationMinutes);
+            <div class="timeline-item"
+                 style="top: @(top)px; height: @(height)px; @EdgeStyle(item)"
+                 draggable="@Interactive.ToString().ToLowerInvariant()"
+                 @ondragstart="() => BeginDrag(item.Id, DragMode.Move)"
+                 data-item-id="@item.Id">
+                <div class="timeline-item__body">
+                    @if (ItemContent is not null)
+                    {
+                        @ItemContent(item)
+                    }
+                    else
+                    {
+                        <span class="timeline-item__title">@item.Title</span>
+                        <span class="timeline-item__time">
+                            @TimelineGrid.HhMmFromMinutes(item.StartMinute) · @item.DurationMinutes min
+                        </span>
+                    }
+                </div>
+                @if (Interactive)
+                {
+                    <div class="timeline-item__resize"
+                         draggable="true"
+                         aria-label="Resize"
+                         @ondragstart:stopPropagation="true"
+                         @ondragstart="() => BeginDrag(item.Id, DragMode.Resize)"></div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<TimelineItem> Items { get; set; } = [];
+
+    [Parameter] public int StartHour { get; set; } = 6;
+    [Parameter] public int EndHour { get; set; } = 22;
+    [Parameter] public int SlotMinutes { get; set; } = 30;
+    [Parameter] public int RowHeightPx { get; set; } = 26;
+
+    /// <summary>Read-only when false (e.g. a locked template) — no drag, no resize grip.</summary>
+    [Parameter] public bool Interactive { get; set; } = true;
+
+    /// <summary>Optional column header, used when several timelines sit side by side.</summary>
+    [Parameter] public string? Label { get; set; }
+
+    /// <summary>Renders the body of an item block. Falls back to title + time when null.</summary>
+    [Parameter] public RenderFragment<TimelineItem>? ItemContent { get; set; }
+
+    [Parameter] public EventCallback<TimelineMove> OnMove { get; set; }
+    [Parameter] public EventCallback<TimelineResize> OnResize { get; set; }
+
+    /// <summary>
+    /// Fired when a slot is dropped on with no internal drag in progress — i.e.
+    /// something from outside (a backlog/upcoming/day-list card) was dropped onto
+    /// the timeline. Carries the slot's start minute; the parent decides what to
+    /// do with its own drag payload (schedule that task here, at this time).
+    /// </summary>
+    [Parameter] public EventCallback<int> OnExternalDrop { get; set; }
+
+    private enum DragMode { Move, Resize }
+
+    private string? _dragItemId;
+    private DragMode _dragMode;
+
+    private int SlotCount => TimelineGrid.SlotCount(StartHour, EndHour, SlotMinutes);
+
+    private int WindowStartMinute => StartHour * 60;
+    private int WindowEndMinute => EndHour * 60;
+
+    // Position an item relative to the window. Items starting before the window
+    // clamp to the top edge so they are never lost off-screen.
+    private int TopPx(int startMinute)
+    {
+        var offset = Math.Max(0, startMinute - WindowStartMinute);
+        return offset * RowHeightPx / SlotMinutes;
+    }
+
+    private int HeightPx(int durationMinutes)
+    {
+        var px = Math.Max(1, durationMinutes) * RowHeightPx / SlotMinutes;
+        return Math.Max(RowHeightPx / 2, px);  // keep a sliver visible for tiny items
+    }
+
+    private static string EdgeStyle(TimelineItem item) =>
+        item.Colour is not null ? $"border-left-color: {item.Colour};" : "";
+
+    private void BeginDrag(string itemId, DragMode mode)
+    {
+        _dragItemId = itemId;
+        _dragMode = mode;
+    }
+
+    private async Task OnSlotDropAsync(int slotIndex)
+    {
+        var slotStart = TimelineGrid.SlotStartMinute(StartHour, slotIndex, SlotMinutes);
+
+        if (_dragItemId is null)
+        {
+            // No internal item is being dragged — this is an external drop
+            // (a card from a list). Let the parent place its own payload here.
+            await OnExternalDrop.InvokeAsync(slotStart);
+            return;
+        }
+
+        var id = _dragItemId;
+        _dragItemId = null;
+
+        if (_dragMode == DragMode.Move)
+        {
+            await OnMove.InvokeAsync(new TimelineMove(id, slotStart));
+        }
+        else
+        {
+            // Resize: the item now extends through the end of the dropped slot.
+            var item = Items.FirstOrDefault(i => i.Id == id);
+            if (item is null)
+            {
+                return;
+            }
+            var newDuration = Math.Max(SlotMinutes, slotStart + SlotMinutes - item.StartMinute);
+            await OnResize.InvokeAsync(new TimelineResize(id, newDuration));
+        }
+    }
+}

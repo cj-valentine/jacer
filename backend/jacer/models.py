@@ -14,6 +14,21 @@ class Category(BaseModel):
     colour: str
 
 
+# A small, fixed palette of muted tones that read well on the charcoal dark
+# theme. Category colours are constrained to this set (Phase 3.5, Amendment 2):
+# a category's colour is either chosen from here or auto-assigned round-robin.
+CATEGORY_PALETTE: list[str] = [
+    "#5B7B9A",  # slate blue
+    "#6E8B6E",  # sage
+    "#B07156",  # clay
+    "#8A6D8B",  # plum
+    "#B39154",  # ochre
+    "#4F8A85",  # teal
+    "#A96B76",  # rose
+    "#7C8290",  # steel
+]
+
+
 class Task(BaseModel):
     id: str
     title: str

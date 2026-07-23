@@ -1,11 +1,13 @@
 @inject ITemplatesApi Api
+@inject ICategoriesApi Cats
 @inject ISnackbar Snackbar
 
 @* ─────────────────────────────────────────────────────────────────────────
-   Templates editor (Phase 3). A locked template is the user's declared intent
-   for a recurring routine; the backend materialises it into task instances.
-   This step covers the WEEKLY grid (Mon–Sun × time-of-day bands), click-to-add,
-   and lock/unlock. Fortnightly A/B editing lands as the next increment.
+   Templates editor (Phase 3.5 rework). Seven side-by-side day schedules
+   (Mon–Sun) built on the SAME DayTimeline as the board, each with an untimed
+   tick-off strip. Untimed items are quick-added and drag onto a day's timeline
+   to gain a time; timed items drag to move and resize to change duration. Items
+   are editable in place. Lock/unlock and the fortnight A/B toggle are unchanged.
    ───────────────────────────────────────────────────────────────────────── *@
 
 <div class="d-flex justify-space-between align-center mb-4">
@@ -132,92 +134,71 @@ else
         </div>
     }
 
-    <div style="overflow-x: auto;">
-        <table class="template-grid">
-            <thead>
-                <tr>
-                    <th class="band-col"></th>
-                    @for (var day = 0; day < 7; day++)
-                    {
-                        <th>@TimeBands.DayLabels[day]</th>
-                    }
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var band in TimeBands.Order)
-                {
-                    <tr>
-                        <th class="band-col">@TimeBands.Label(band)</th>
-                        @for (var day = 0; day < 7; day++)
-                        {
-                            var d = day;
-                            var b = band;
-                            <td>
-                                @foreach (var item in ItemsIn(d, b))
-                                {
-                                    <MudPaper Elevation="0" Outlined="true" Class="pa-1 mb-1 d-flex justify-space-between align-center">
-                                        <div>
-                                            <MudText Typo="Typo.body2">@item.Title</MudText>
-                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                                @(item.DefaultTime is not null ? $"{item.DefaultTime} · " : "")@(item.DurationMinutes)min
-                                            </MudText>
-                                        </div>
-                                        @if (!_selected!.IsLocked)
-                                        {
-                                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
-                                                           aria-label="Remove item"
-                                                           OnClick="@(() => DeleteItemAsync(item))" />
-                                        }
-                                    </MudPaper>
-                                }
+    <div class="tpl-grid">
+        @for (var day = 0; day < 7; day++)
+        {
+            var d = day;
+            var locked = _selected!.IsLocked;
+            <div class="tpl-col">
+                <div class="tpl-col__head">@TimelineGrid.DayLabels[d]</div>
 
-                                @if (!_selected!.IsLocked)
-                                {
-                                    @if (_addDay == d && _addBand == b)
-                                    {
-                                        <MudTextField @bind-Value="_addTitle"
-                                                      Placeholder="Title…"
-                                                      Variant="Variant.Outlined"
-                                                      Margin="Margin.Dense"
-                                                      Immediate="true"
-                                                      AutoFocus="true"
-                                                      OnKeyDown="@(e => OnAddKeyDown(e, d, b))"
-                                                      OnBlur="CancelAdd" />
-                                    }
-                                    else
-                                    {
-                                        <MudButton StartIcon="@Icons.Material.Filled.Add"
-                                                   Size="Size.Small" FullWidth="true"
-                                                   Class="add-cell-btn"
-                                                   OnClick="@(() => BeginAdd(d, b))">
-                                            Add
-                                        </MudButton>
-                                    }
-                                }
-                            </td>
+                @* Untimed tick-off strip. *@
+                <div class="tpl-col__untimed"
+                     @ondragover:preventDefault="true" @ondragover="() => { }"
+                     @ondrop="() => OnDropOnUntimedAsync(d)">
+                    @foreach (var item in UntimedIn(d))
+                    {
+                        <div class="tpl-untimed-card" draggable="@((!locked).ToString().ToLowerInvariant())"
+                             @ondragstart="() => { _dragItemId = item.Id; }">
+                            <TemplateItemBody Item="item" Categories="_categories" Interactive="!locked"
+                                              OnEditTitle="EditTitleAsync" OnEditDuration="EditDurationAsync"
+                                              OnAssignCategory="AssignCategoryAsync" OnDelete="DeleteItemAsync" />
+                        </div>
+                    }
+
+                    @if (!locked)
+                    {
+                        @if (_addDay == d)
+                        {
+                            <MudTextField @bind-Value="_addTitle" Placeholder="Tick-off task…"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true"
+                                          AutoFocus="true" OnKeyDown="@(e => OnAddKeyDown(e, d))"
+                                          OnBlur="@(() => CommitAddAsync(d))" />
                         }
-                    </tr>
-                }
-            </tbody>
-        </table>
+                        else
+                        {
+                            <MudButton StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" FullWidth="true"
+                                       Class="tpl-add-btn" OnClick="@(() => BeginAdd(d))">Add</MudButton>
+                        }
+                    }
+                </div>
+
+                @* Timed schedule. *@
+                <DayTimeline Items="TimedIn(d)" Interactive="!locked" RowHeightPx="18"
+                             OnMove="m => OnTimelineMoveAsync(m)"
+                             OnResize="r => OnTimelineResizeAsync(r)"
+                             OnExternalDrop="min => OnDropOnTimelineAsync(d, min)">
+                    <ItemContent>
+                        @{
+                            var full = ItemById(context.Id);
+                        }
+                        @if (full is not null)
+                        {
+                            <TemplateItemBody Item="full" Categories="_categories" Interactive="!locked"
+                                              OnEditTitle="EditTitleAsync" OnEditDuration="EditDurationAsync"
+                                              OnAssignCategory="AssignCategoryAsync" OnDelete="DeleteItemAsync" />
+                        }
+                    </ItemContent>
+                </DayTimeline>
+            </div>
+        }
     </div>
 }
-
-<style>
-    .template-grid { border-collapse: collapse; width: 100%; min-width: 900px; }
-    .template-grid th, .template-grid td {
-        border: 1px solid var(--mud-palette-lines-default);
-        padding: 6px; vertical-align: top;
-    }
-    .template-grid thead th { text-align: center; font-weight: 600; }
-    .template-grid .band-col { width: 90px; white-space: nowrap; text-align: left; }
-    .template-grid td { width: 13%; min-width: 110px; }
-    .add-cell-btn { opacity: 0.7; }
-</style>
 
 @code {
     private readonly List<TemplateDto> _templates = [];
     private readonly List<TemplateItemDto> _items = [];
+    private readonly List<CategoryDto> _categories = [];
     private string? _selectedId;
     private TemplateDto? _selected;
 
@@ -230,16 +211,17 @@ else
     private Cadence _newCadence = Cadence.Weekly;
     private DateTime? _newWeekAStart;
 
-    // Which week the fortnightly grid is currently editing/showing.
     private string _weekSlot = "A";
+
+    // Add-untimed state, and the item currently being dragged strip→timeline.
+    private int? _addDay;
+    private string _addTitle = "";
+    private string? _dragItemId;
 
     private bool CanCreate =>
         !string.IsNullOrWhiteSpace(_newName)
         && (_newCadence != Cadence.Fortnightly || _newWeekAStart is not null);
 
-    // A gentle starter routine: weekday planning + a couple of deep-work blocks
-    // and a Friday review, spread across the time-of-day bands so a new user
-    // immediately sees how the grid works. Editable like any other template.
     private static readonly (int Day, string Title, int Minutes, string? Time)[] StarterItems =
     [
         (0, "Plan the day", 15, "09:00"),
@@ -252,19 +234,55 @@ else
         (4, "Weekly review", 30, "16:00"),
     ];
 
-    private void CancelCreate()
+    // ── Selection helpers ──────────────────────────────────────────────────
+    private IEnumerable<TemplateItemDto> DayItems(int day) =>
+        _items.Where(i => i.DayOfWeek == day && MatchesCurrentWeek(i));
+
+    private IEnumerable<TemplateItemDto> UntimedIn(int day) =>
+        DayItems(day).Where(i => i.DefaultTime is null).OrderBy(i => i.Title);
+
+    private List<TimelineItem> TimedIn(int day) =>
+        DayItems(day).Where(i => i.DefaultTime is not null)
+            .Select(i => new TimelineItem
+            {
+                Id = i.Id,
+                Title = i.Title,
+                StartMinute = TimelineGrid.MinutesFromHhMm(i.DefaultTime) ?? 9 * 60,
+                DurationMinutes = i.DurationMinutes,
+                Colour = _categories.FirstOrDefault(c => c.Id == i.CategoryId)?.Colour,
+            })
+            .ToList();
+
+    private TemplateItemDto? ItemById(string id) => _items.FirstOrDefault(i => i.Id == id);
+
+    private bool MatchesCurrentWeek(TemplateItemDto i)
     {
-        _creating = false;
-        _newName = "";
-        _newCadence = Cadence.Weekly;
-        _newWeekAStart = null;
+        if (_selected?.Cadence != Cadence.Fortnightly)
+        {
+            return true;
+        }
+        return i.WeekSlot is null || i.WeekSlot == _weekSlot;
     }
 
-    private int? _addDay;
-    private TimeBand? _addBand;
-    private string _addTitle = "";
+    private void SetWeekSlot(string slot)
+    {
+        _weekSlot = slot;
+        _addDay = null;
+    }
 
-    protected override async Task OnInitializedAsync() => await ReloadTemplatesAsync();
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _categories.AddRange(await Cats.ListCategoriesAsync());
+        }
+        catch
+        {
+            // Non-fatal — categories just won't colour/label until reachable.
+        }
+        await ReloadTemplatesAsync();
+    }
 
     private async Task ReloadTemplatesAsync()
     {
@@ -321,32 +339,17 @@ else
         }
     }
 
-    private IEnumerable<TemplateItemDto> ItemsIn(int day, TimeBand band) =>
-        _items.Where(i => i.DayOfWeek == day
-                          && TimeBands.BandOf(i.DefaultTime) == band
-                          && MatchesCurrentWeek(i));
-
-    // Weekly: every item shows. Fortnightly: show the selected week's items;
-    // an item with no week_slot fires every week, so it shows in both.
-    private bool MatchesCurrentWeek(TemplateItemDto i)
+    // ── Create / seed / lock (unchanged behaviour) ─────────────────────────
+    private void CancelCreate()
     {
-        if (_selected?.Cadence != Cadence.Fortnightly)
-        {
-            return true;
-        }
-        return i.WeekSlot is null || i.WeekSlot == _weekSlot;
-    }
-
-    private void SetWeekSlot(string slot)
-    {
-        _weekSlot = slot;
-        CancelAdd();
+        _creating = false;
+        _newName = "";
+        _newCadence = Cadence.Weekly;
+        _newWeekAStart = null;
     }
 
     private async Task OnNewNameKeyDown(KeyboardEventArgs e)
     {
-        // Enter is a shortcut only for the simple weekly case; fortnightly needs
-        // the extra date, so let the user complete the form and click Create.
         if (e.Key == "Enter" && _newCadence == Cadence.Weekly && CanCreate)
         {
             await CreateTemplateAsync();
@@ -413,70 +416,6 @@ else
         }
     }
 
-    private void BeginAdd(int day, TimeBand band)
-    {
-        _addDay = day;
-        _addBand = band;
-        _addTitle = "";
-    }
-
-    private void CancelAdd()
-    {
-        _addDay = null;
-        _addBand = null;
-        _addTitle = "";
-    }
-
-    private async Task OnAddKeyDown(KeyboardEventArgs e, int day, TimeBand band)
-    {
-        if (e.Key == "Escape")
-        {
-            CancelAdd();
-            return;
-        }
-        if (e.Key != "Enter")
-        {
-            return;
-        }
-
-        var title = _addTitle.Trim();
-        if (title.Length == 0)
-        {
-            return;
-        }
-
-        try
-        {
-            var created = await Api.CreateItemAsync(_selectedId!, new TemplateItemCreateDto
-            {
-                DayOfWeek = day,
-                Title = title,
-                DefaultTime = TimeBands.DefaultTimeFor(band),
-                // week_slot is only valid on fortnightly templates (backend rejects it on weekly).
-                WeekSlot = _selected?.Cadence == Cadence.Fortnightly ? _weekSlot : null,
-            });
-            _items.Add(created);
-            _addTitle = "";  // keep the field open for rapid entry in the same cell
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Could not add item: {ex.Message}", Severity.Error);
-        }
-    }
-
-    private async Task DeleteItemAsync(TemplateItemDto item)
-    {
-        try
-        {
-            await Api.DeleteItemAsync(item.Id);
-            _items.RemoveAll(i => i.Id == item.Id);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Could not remove item: {ex.Message}", Severity.Error);
-        }
-    }
-
     private async Task LockAsync()
     {
         if (_selected is null)
@@ -488,7 +427,7 @@ else
             await Api.LockTemplateAsync(_selected.Id);
             _selected = _selected with { IsLocked = true };
             ReplaceSelectedInList();
-            CancelAdd();
+            _addDay = null;
             Snackbar.Add("Template locked — it will now materialise.", Severity.Success);
         }
         catch (Exception ex)
@@ -528,4 +467,232 @@ else
             _templates[idx] = _selected;
         }
     }
+
+    // ── Add untimed items (blur saves — fixes the click-away bug) ───────────
+    private void BeginAdd(int day)
+    {
+        _addDay = day;
+        _addTitle = "";
+    }
+
+    private async Task OnAddKeyDown(KeyboardEventArgs e, int day)
+    {
+        if (e.Key == "Escape")
+        {
+            _addDay = null;
+            _addTitle = "";
+        }
+        else if (e.Key == "Enter")
+        {
+            await CreateUntimedAsync(day);  // keep the field open for rapid entry
+        }
+    }
+
+    // Click-away: SAVE if there's text, then close.
+    private async Task CommitAddAsync(int day)
+    {
+        if (_addDay != day)
+        {
+            return;
+        }
+        await CreateUntimedAsync(day);
+        _addDay = null;
+    }
+
+    private async Task CreateUntimedAsync(int day)
+    {
+        var title = _addTitle.Trim();
+        if (title.Length == 0)
+        {
+            return;
+        }
+        try
+        {
+            var created = await Api.CreateItemAsync(_selectedId!, new TemplateItemCreateDto
+            {
+                DayOfWeek = day,
+                Title = title,
+                // No DefaultTime — an untimed tick-off item (fixes the forced-slot bug).
+                WeekSlot = _selected?.Cadence == Cadence.Fortnightly ? _weekSlot : null,
+            });
+            _items.Add(created);
+            _addTitle = "";
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not add item: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── Edit / delete / category ────────────────────────────────────────────
+    private async Task EditTitleAsync(TemplateTitleEdit edit)
+    {
+        try
+        {
+            await Api.UpdateItemAsync(edit.ItemId, new TemplateItemUpdateDto { Title = edit.Title });
+            await LoadItemsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not rename: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task EditDurationAsync(TemplateDurationEdit edit)
+    {
+        try
+        {
+            await Api.UpdateItemAsync(edit.ItemId, new TemplateItemUpdateDto { DurationMinutes = edit.Minutes });
+            await LoadItemsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not change duration: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task AssignCategoryAsync(TemplateCategoryAssignment a)
+    {
+        try
+        {
+            await Api.SetItemCategoryAsync(a.ItemId, a.CategoryId);
+            await LoadItemsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not set category: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteItemAsync(string itemId)
+    {
+        try
+        {
+            await Api.DeleteItemAsync(itemId);
+            _items.RemoveAll(i => i.Id == itemId);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not remove item: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── Drag: untimed strip ↔ timeline ────────────────────────────────────
+    private void ReplaceItem(TemplateItemDto updated)
+    {
+        var idx = _items.FindIndex(i => i.Id == updated.Id);
+        if (idx >= 0)
+        {
+            _items[idx] = updated;
+        }
+    }
+
+    private async Task OnTimelineMoveAsync(TimelineMove move)
+    {
+        var item = ItemById(move.ItemId);
+        if (item is null)
+        {
+            return;
+        }
+        var previous = item;
+        var time = TimelineGrid.HhMmFromMinutes(move.StartMinute);
+        ReplaceItem(item with { DefaultTime = time });  // optimistic
+        try
+        {
+            await Api.UpdateItemAsync(move.ItemId, new TemplateItemUpdateDto { DefaultTime = time });
+        }
+        catch (Exception ex)
+        {
+            ReplaceItem(previous);
+            Snackbar.Add($"Could not move: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OnTimelineResizeAsync(TimelineResize resize)
+    {
+        var item = ItemById(resize.ItemId);
+        if (item is null)
+        {
+            return;
+        }
+        var previous = item;
+        ReplaceItem(item with { DurationMinutes = resize.DurationMinutes });  // optimistic
+        try
+        {
+            await Api.UpdateItemAsync(resize.ItemId, new TemplateItemUpdateDto { DurationMinutes = resize.DurationMinutes });
+        }
+        catch (Exception ex)
+        {
+            ReplaceItem(previous);
+            Snackbar.Add($"Could not resize: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // Drop an item onto a day's timeline: give it that time (and that day).
+    private async Task OnDropOnTimelineAsync(int day, int startMinute)
+    {
+        var id = _dragItemId;
+        _dragItemId = null;
+        if (id is null)
+        {
+            return;
+        }
+        try
+        {
+            await Api.UpdateItemAsync(id, new TemplateItemUpdateDto
+            {
+                DefaultTime = TimelineGrid.HhMmFromMinutes(startMinute),
+                DayOfWeek = day,
+            });
+            await LoadItemsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not schedule item: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // Drop onto another day's untimed strip: move the item to that day (keeps it
+    // untimed if it already was; a timed item keeps its time but changes day).
+    private async Task OnDropOnUntimedAsync(int day)
+    {
+        var id = _dragItemId;
+        _dragItemId = null;
+        if (id is null)
+        {
+            return;
+        }
+        try
+        {
+            await Api.UpdateItemAsync(id, new TemplateItemUpdateDto { DayOfWeek = day });
+            await LoadItemsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not move item: {ex.Message}", Severity.Error);
+        }
+    }
 }
+
+<style>
+    .tpl-grid { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
+    .tpl-col {
+        flex: 1 1 0; min-width: 150px;
+        border: 1px solid var(--mud-palette-lines-default); border-radius: 6px;
+        display: flex; flex-direction: column;
+    }
+    .tpl-col__head {
+        text-align: center; font-weight: 600; padding: 6px 0;
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+    }
+    .tpl-col__untimed {
+        padding: 6px; min-height: 48px;
+        border-bottom: 1px dashed var(--mud-palette-lines-default);
+    }
+    .tpl-untimed-card { cursor: grab; }
+    .tpl-untimed-card > .template-item-body {
+        border: 1px solid var(--mud-palette-lines-default);
+        border-radius: 4px; padding: 2px 4px; margin-bottom: 4px;
+    }
+    .tpl-add-btn { opacity: 0.7; }
+</style>

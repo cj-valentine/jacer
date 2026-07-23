@@ -1,4 +1,4 @@
-from jacer.models import DailyLog, Task, Template, TemplateItem
+from jacer.models import Category, DailyLog, Task, Template, TemplateItem
 from jacer.repositories.base import Repository
 
 
@@ -9,6 +9,7 @@ class InMemoryRepository(Repository):
         self._tasks: dict[str, Task] = {}
         self._templates: dict[str, Template] = {}
         self._template_items: dict[str, TemplateItem] = {}
+        self._categories: dict[str, Category] = {}
         self._daily_logs: dict[str, DailyLog] = {}
         self._materialised: set[tuple[str, str]] = set()
 
@@ -65,6 +66,21 @@ class InMemoryRepository(Repository):
 
     def delete_template_item(self, item_id: str) -> bool:
         return self._template_items.pop(item_id, None) is not None
+
+    # Categories
+
+    def list_categories(self) -> list[Category]:
+        return list(self._categories.values())
+
+    def get_category(self, category_id: str) -> Category | None:
+        return self._categories.get(category_id)
+
+    def save_category(self, category: Category) -> Category:
+        self._categories[category.id] = category
+        return category
+
+    def delete_category(self, category_id: str) -> bool:
+        return self._categories.pop(category_id, None) is not None
 
     # Daily logs
 
