@@ -9,6 +9,9 @@ project's standalone decision history — newer ADRs may supersede older ones.
 | [ADR-001](ADR-001-mit-licence.md) | MIT licence | Accepted |
 | [ADR-002](ADR-002-original-stack.md) | Original v2 stack (FastAPI + React) | Superseded (frontend) by ADR-003 |
 | [ADR-003](ADR-003-blazor-mudblazor-frontend.md) | Blazor + MudBlazor frontend | Accepted |
+| [ADR-004](ADR-004-status-canonical-completion.md) | `status` canonical; `is_completed` derived | Accepted |
+| [ADR-005](ADR-005-obsidian-native-daily-logs.md) | Obsidian-native daily logs + stale-day sweep | Accepted |
+| [ADR-006](ADR-006-reset-to-template-endpoint.md) | `reset-to-template` endpoint (frozen-contract escape) | Accepted |
 
 ## Format
 
