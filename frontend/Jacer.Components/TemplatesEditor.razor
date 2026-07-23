@@ -1,0 +1,405 @@
+@inject ITemplatesApi Api
+@inject ISnackbar Snackbar
+
+@* ─────────────────────────────────────────────────────────────────────────
+   Templates editor (Phase 3). A locked template is the user's declared intent
+   for a recurring routine; the backend materialises it into task instances.
+   This step covers the WEEKLY grid (Mon–Sun × time-of-day bands), click-to-add,
+   and lock/unlock. Fortnightly A/B editing lands as the next increment.
+   ───────────────────────────────────────────────────────────────────────── *@
+
+<div class="d-flex justify-space-between align-center mb-4">
+    <MudText Typo="Typo.h5">Templates</MudText>
+    <MudButton StartIcon="@Icons.Material.Filled.Add"
+               Variant="Variant.Filled"
+               Color="Color.Primary"
+               Disabled="_loading"
+               OnClick="@(() => _creating = !_creating)">
+        New template
+    </MudButton>
+</div>
+
+@if (_creating)
+{
+    <MudPaper Outlined="true" Class="pa-3 mb-4 d-flex gap-3 align-center flex-wrap">
+        <MudTextField @bind-Value="_newName"
+                      Placeholder="Template name…"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Immediate="true"
+                      Style="min-width: 240px;"
+                      OnKeyDown="OnNewNameKeyDown" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="@(string.IsNullOrWhiteSpace(_newName))"
+                   OnClick="CreateTemplateAsync">
+            Create (weekly)
+        </MudButton>
+        <MudButton Variant="Variant.Text" OnClick="CancelCreate">
+            Cancel
+        </MudButton>
+    </MudPaper>
+}
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error">@_error</MudAlert>
+}
+else if (_templates.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">
+        No templates yet. Create one to start shaping your weekly routine.
+    </MudAlert>
+}
+else
+{
+    <div class="d-flex gap-2 align-center mb-4 flex-wrap">
+        <MudSelect T="string" Value="_selectedId" ValueChanged="SelectTemplateAsync"
+                   Label="Template" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   Style="min-width: 240px;">
+            @foreach (var t in _templates)
+            {
+                <MudSelectItem Value="@t.Id">@t.Name (@t.Cadence.ToString().ToLowerInvariant())</MudSelectItem>
+            }
+        </MudSelect>
+
+        @if (_selected is not null)
+        {
+            @if (_selected.IsLocked)
+            {
+                <MudChip T="string" Icon="@Icons.Material.Filled.Lock" Color="Color.Success" Size="Size.Small">Locked</MudChip>
+                <MudButton StartIcon="@Icons.Material.Filled.LockOpen" Variant="Variant.Outlined"
+                           OnClick="UnlockAsync">Unlock to edit</MudButton>
+            }
+            else
+            {
+                <MudChip T="string" Icon="@Icons.Material.Filled.LockOpen" Color="Color.Default" Size="Size.Small">Draft</MudChip>
+                <MudButton StartIcon="@Icons.Material.Filled.Lock" Variant="Variant.Filled" Color="Color.Success"
+                           OnClick="LockAsync">Lock</MudButton>
+            }
+        }
+    </div>
+
+    @if (_selected is not null && _selected.Cadence == Cadence.Fortnightly)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4">
+            This is a fortnightly template. A/B week editing lands in the next increment;
+            for now the grid shows week-A items only.
+        </MudAlert>
+    }
+
+    <div style="overflow-x: auto;">
+        <table class="template-grid">
+            <thead>
+                <tr>
+                    <th class="band-col"></th>
+                    @for (var day = 0; day < 7; day++)
+                    {
+                        <th>@TimeBands.DayLabels[day]</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var band in TimeBands.Order)
+                {
+                    <tr>
+                        <th class="band-col">@TimeBands.Label(band)</th>
+                        @for (var day = 0; day < 7; day++)
+                        {
+                            var d = day;
+                            var b = band;
+                            <td>
+                                @foreach (var item in ItemsIn(d, b))
+                                {
+                                    <MudPaper Elevation="0" Outlined="true" Class="pa-1 mb-1 d-flex justify-space-between align-center">
+                                        <div>
+                                            <MudText Typo="Typo.body2">@item.Title</MudText>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                @(item.DefaultTime is not null ? $"{item.DefaultTime} · " : "")@(item.DurationMinutes)min
+                                            </MudText>
+                                        </div>
+                                        @if (!_selected!.IsLocked)
+                                        {
+                                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                                           aria-label="Remove item"
+                                                           OnClick="@(() => DeleteItemAsync(item))" />
+                                        }
+                                    </MudPaper>
+                                }
+
+                                @if (!_selected!.IsLocked)
+                                {
+                                    @if (_addDay == d && _addBand == b)
+                                    {
+                                        <MudTextField @bind-Value="_addTitle"
+                                                      Placeholder="Title…"
+                                                      Variant="Variant.Outlined"
+                                                      Margin="Margin.Dense"
+                                                      Immediate="true"
+                                                      AutoFocus="true"
+                                                      OnKeyDown="@(e => OnAddKeyDown(e, d, b))"
+                                                      OnBlur="CancelAdd" />
+                                    }
+                                    else
+                                    {
+                                        <MudButton StartIcon="@Icons.Material.Filled.Add"
+                                                   Size="Size.Small" FullWidth="true"
+                                                   Class="add-cell-btn"
+                                                   OnClick="@(() => BeginAdd(d, b))">
+                                            Add
+                                        </MudButton>
+                                    }
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<style>
+    .template-grid { border-collapse: collapse; width: 100%; min-width: 900px; }
+    .template-grid th, .template-grid td {
+        border: 1px solid var(--mud-palette-lines-default);
+        padding: 6px; vertical-align: top;
+    }
+    .template-grid thead th { text-align: center; font-weight: 600; }
+    .template-grid .band-col { width: 90px; white-space: nowrap; text-align: left; }
+    .template-grid td { width: 13%; min-width: 110px; }
+    .add-cell-btn { opacity: 0.7; }
+</style>
+
+@code {
+    private readonly List<TemplateDto> _templates = [];
+    private readonly List<TemplateItemDto> _items = [];
+    private string? _selectedId;
+    private TemplateDto? _selected;
+
+    private bool _loading = true;
+    private string? _error;
+
+    private bool _creating;
+    private string _newName = "";
+
+    private void CancelCreate()
+    {
+        _creating = false;
+        _newName = "";
+    }
+
+    private int? _addDay;
+    private TimeBand? _addBand;
+    private string _addTitle = "";
+
+    protected override async Task OnInitializedAsync() => await ReloadTemplatesAsync();
+
+    private async Task ReloadTemplatesAsync()
+    {
+        try
+        {
+            var all = await Api.ListTemplatesAsync();
+            _templates.Clear();
+            _templates.AddRange(all);
+            _error = null;
+
+            if (_templates.Count > 0)
+            {
+                var keep = _templates.Any(t => t.Id == _selectedId) ? _selectedId! : _templates[0].Id;
+                await SelectTemplateAsync(keep);
+            }
+            else
+            {
+                _selectedId = null;
+                _selected = null;
+                _items.Clear();
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not reach the backend: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SelectTemplateAsync(string id)
+    {
+        _selectedId = id;
+        _selected = _templates.FirstOrDefault(t => t.Id == id);
+        await LoadItemsAsync();
+    }
+
+    private async Task LoadItemsAsync()
+    {
+        _items.Clear();
+        if (_selectedId is null)
+        {
+            return;
+        }
+        try
+        {
+            _items.AddRange(await Api.ListItemsAsync(_selectedId));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not load items: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // Week-A / weekly items only for now (week_slot "B" hidden until the toggle lands).
+    private IEnumerable<TemplateItemDto> ItemsIn(int day, TimeBand band) =>
+        _items.Where(i => i.DayOfWeek == day
+                          && TimeBands.BandOf(i.DefaultTime) == band
+                          && i.WeekSlot is null or "A");
+
+    private async Task OnNewNameKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_newName))
+        {
+            await CreateTemplateAsync();
+        }
+    }
+
+    private async Task CreateTemplateAsync()
+    {
+        var name = _newName.Trim();
+        if (name.Length == 0)
+        {
+            return;
+        }
+        try
+        {
+            var created = await Api.CreateTemplateAsync(new TemplateCreateDto { Name = name });
+            _creating = false;
+            _newName = "";
+            await ReloadTemplatesAsync();
+            await SelectTemplateAsync(created.Id);
+            Snackbar.Add($"Created “{name}”", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not create template: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void BeginAdd(int day, TimeBand band)
+    {
+        _addDay = day;
+        _addBand = band;
+        _addTitle = "";
+    }
+
+    private void CancelAdd()
+    {
+        _addDay = null;
+        _addBand = null;
+        _addTitle = "";
+    }
+
+    private async Task OnAddKeyDown(KeyboardEventArgs e, int day, TimeBand band)
+    {
+        if (e.Key == "Escape")
+        {
+            CancelAdd();
+            return;
+        }
+        if (e.Key != "Enter")
+        {
+            return;
+        }
+
+        var title = _addTitle.Trim();
+        if (title.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var created = await Api.CreateItemAsync(_selectedId!, new TemplateItemCreateDto
+            {
+                DayOfWeek = day,
+                Title = title,
+                DefaultTime = TimeBands.DefaultTimeFor(band),
+            });
+            _items.Add(created);
+            _addTitle = "";  // keep the field open for rapid entry in the same cell
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not add item: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteItemAsync(TemplateItemDto item)
+    {
+        try
+        {
+            await Api.DeleteItemAsync(item.Id);
+            _items.RemoveAll(i => i.Id == item.Id);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not remove item: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LockAsync()
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+        try
+        {
+            await Api.LockTemplateAsync(_selected.Id);
+            _selected = _selected with { IsLocked = true };
+            ReplaceSelectedInList();
+            CancelAdd();
+            Snackbar.Add("Template locked — it will now materialise.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not lock: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task UnlockAsync()
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+        try
+        {
+            await Api.UnlockTemplateAsync(_selected.Id);
+            _selected = _selected with { IsLocked = false };
+            ReplaceSelectedInList();
+            Snackbar.Add("Template unlocked — edits won't affect already-materialised days.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not unlock: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void ReplaceSelectedInList()
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+        var idx = _templates.FindIndex(t => t.Id == _selected.Id);
+        if (idx >= 0)
+        {
+            _templates[idx] = _selected;
+        }
+    }
+}
