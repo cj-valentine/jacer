@@ -1,0 +1,42 @@
+@* A single task card: title, duration estimate, and plain move buttons. *@
+
+<MudPaper Elevation="1" Class="pa-3 mb-2">
+    <MudText Typo="Typo.body2">@Task.Title</MudText>
+    <MudText Typo="Typo.caption" Color="Color.Secondary">@Task.DurationMinutes min</MudText>
+
+    @if (MoveTargets.Count > 0)
+    {
+        <div class="d-flex gap-1 mt-2 flex-wrap">
+            @foreach (var target in MoveTargets)
+            {
+                <MudButton Size="Size.Small"
+                           Variant="Variant.Outlined"
+                           Disabled="_busy"
+                           OnClick="@(() => MoveAsync(target))">
+                    @BoardColumns.Label(target)
+                </MudButton>
+            }
+        </div>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired]
+    public required TaskDto Task { get; set; }
+
+    /// <summary>Statuses this card can be moved to (the other board columns).</summary>
+    [Parameter]
+    public IReadOnlyList<TaskStatus> MoveTargets { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<TaskMove> OnMove { get; set; }
+
+    private bool _busy;
+
+    private async Task MoveAsync(TaskStatus target)
+    {
+        _busy = true;
+        await OnMove.InvokeAsync(new TaskMove(Task.Id, target));
+        _busy = false;
+    }
+}

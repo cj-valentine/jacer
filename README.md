@@ -25,9 +25,9 @@ Until `v0.1.0` ships, the public API and data shapes are unstable. See [ROADMAP]
 ## Tech stack
 
 - **Backend:** Python 3.12 + FastAPI + Pydantic + markdown-on-disk storage
-- **Frontend:** TypeScript + React + Vite + Tailwind + shadcn/ui
+- **Frontend:** Blazor Server (.NET 10, InteractiveServer) + MudBlazor — see [ADR-003](docs/adr/ADR-003-blazor-mudblazor-frontend.md)
 - **Deployment:** Docker Compose, with a `pip install jacer` path planned
-- **Tests:** pytest (backend), Vitest + Playwright (frontend, once Phase 2 lands)
+- **Tests:** pytest (backend), bUnit + Playwright (frontend)
 
 ## Install
 
@@ -35,7 +35,17 @@ Until `v0.1.0` ships, the public API and data shapes are unstable. See [ROADMAP]
 
 ## Develop
 
-> Detailed development guide coming with Phase 1. The v2 backend will live in `backend/`, frontend in `frontend/`. For now, browse the [`legacy/`](legacy/) directory to see the v1 starting point.
+The v2 backend lives in [`backend/`](backend/) (FastAPI) and the frontend in [`frontend/`](frontend/) (Blazor Server solution, `Jacer.slnx`). Key decisions are recorded in [`docs/adr/`](docs/adr/).
+
+```bash
+# Backend — from backend/
+uv run uvicorn jacer.main:app --reload --port 8000
+
+# Frontend — from frontend/
+dotnet run --project Jacer.Web --launch-profile http   # http://localhost:5099
+dotnet build Jacer.slnx
+dotnet test  Jacer.slnx
+```
 
 ## Contributing
 
