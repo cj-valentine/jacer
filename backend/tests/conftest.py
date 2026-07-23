@@ -28,3 +28,18 @@ def client(memory_repository):
         yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def both_repos_client(repository):
+    """Like `client`, but parametrised over both adapters (see `repository`).
+
+    Used where router behaviour must be proven to round-trip through real
+    persistence — e.g. the ADR-004 status/is_completed reconciliation, whose
+    derived field the markdown adapter has to serialise and reload correctly.
+    """
+    app.dependency_overrides[get_repository] = lambda: repository
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.clear()

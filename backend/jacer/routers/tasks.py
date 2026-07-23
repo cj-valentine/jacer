@@ -29,6 +29,8 @@ def create_task(payload: TaskCreate, repo: Repository = Depends(get_repository))
         updated_at=now,
         **payload.model_dump(),
     )
+    # ADR-004: status is canonical; is_completed is derived from it.
+    task.is_completed = task.status == "done"
     return repo.save_task(task)
 
 
@@ -56,6 +58,17 @@ def update_task(
 
     for k, v in updates.items():
         setattr(existing, k, v)
+
+    # ADR-004: status and is_completed are two views of one truth. Reconcile
+    # them so callers can drive either field. status is canonical.
+    #   - status supplied (with or without is_completed): status wins.
+    #   - only is_completed supplied: it drives status
+    #       (True -> "done", False -> "backlog").
+    # Then is_completed is always re-derived from the resulting status, so the
+    # pair can never be left inconsistent.
+    if "status" not in updates and "is_completed" in updates:
+        existing.status = "done" if updates["is_completed"] else "backlog"
+    existing.is_completed = existing.status == "done"
 
     if existing.template_origin_id:
         existing.diverged = True
