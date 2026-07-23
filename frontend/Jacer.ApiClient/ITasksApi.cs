@@ -18,5 +18,12 @@ public interface ITasksApi
 
     Task<TaskDto> UpdateTaskAsync(string id, TaskUpdateDto payload, CancellationToken ct = default);
 
+    /// <summary>
+    /// Restore a template-origin task's definition from its originating template
+    /// item and clear <c>diverged</c> (see ADR-006). Returns null if the task or
+    /// its item is gone (404), or throws for other failures.
+    /// </summary>
+    Task<TaskDto?> ResetToTemplateAsync(string id, CancellationToken ct = default);
+
     Task DeleteTaskAsync(string id, CancellationToken ct = default);
 }

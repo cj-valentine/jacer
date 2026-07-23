@@ -54,6 +54,17 @@ public sealed class TasksApiClient(HttpClient http) : ITasksApi
         return (await response.Content.ReadFromJsonAsync<TaskDto>(JacerJson.Options, ct))!;
     }
 
+    public async Task<TaskDto?> ResetToTemplateAsync(string id, CancellationToken ct = default)
+    {
+        var response = await http.PostAsync($"api/tasks/{id}/reset-to-template", null, ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TaskDto>(JacerJson.Options, ct);
+    }
+
     public async Task DeleteTaskAsync(string id, CancellationToken ct = default)
     {
         var response = await http.DeleteAsync($"api/tasks/{id}", ct);

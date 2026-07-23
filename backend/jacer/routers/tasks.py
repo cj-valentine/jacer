@@ -29,6 +29,8 @@ def create_task(payload: TaskCreate, repo: Repository = Depends(get_repository))
         updated_at=now,
         **payload.model_dump(),
     )
+    # ADR-004: status is canonical; is_completed is derived from it.
+    task.is_completed = task.status == "done"
     return repo.save_task(task)
 
 
@@ -57,11 +59,58 @@ def update_task(
     for k, v in updates.items():
         setattr(existing, k, v)
 
+    # ADR-004: status and is_completed are two views of one truth. Reconcile
+    # them so callers can drive either field. status is canonical.
+    #   - status supplied (with or without is_completed): status wins.
+    #   - only is_completed supplied: it drives status
+    #       (True -> "done", False -> "backlog").
+    # Then is_completed is always re-derived from the resulting status, so the
+    # pair can never be left inconsistent.
+    if "status" not in updates and "is_completed" in updates:
+        existing.status = "done" if updates["is_completed"] else "backlog"
+    existing.is_completed = existing.status == "done"
+
     if existing.template_origin_id:
         existing.diverged = True
 
     existing.updated_at = datetime.now(UTC)
     return repo.save_task(existing)
+
+
+@router.post("/{task_id}/reset-to-template", response_model=Task)
+def reset_to_template(task_id: str, repo: Repository = Depends(get_repository)):
+    """Restore a task's DEFINITION from its originating template item.
+
+    Additive endpoint (ADR-006): a reset cannot be done client-side because any
+    PATCH to a template-origin task re-sets diverged=True. This restores the
+    definition fields — title, duration_minutes, category, scheduled_time — from
+    the template item and clears diverged. It deliberately does NOT touch status,
+    is_completed, scheduled_date or instance_date: reset is about definition, not
+    placement or completion.
+    """
+    task = repo.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.template_origin_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Task is not derived from a template",
+        )
+
+    item = repo.get_template_item(task.template_origin_id)
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Originating template item no longer exists",
+        )
+
+    task.title = item.title
+    task.duration_minutes = item.duration_minutes
+    task.category_id = item.category_id
+    task.scheduled_time = item.default_time
+    task.diverged = False
+    task.updated_at = datetime.now(UTC)
+    return repo.save_task(task)
 
 
 @router.delete("/{task_id}", response_model=DeleteResponse)

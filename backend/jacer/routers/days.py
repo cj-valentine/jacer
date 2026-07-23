@@ -6,7 +6,11 @@ from jacer.deps import get_repository
 from jacer.models import Task
 from jacer.repositories.base import Repository
 from jacer.schemas import HorizonMaterialiseResponse, MaterialiseResponse
-from jacer.services.materialise import materialise_day, materialise_horizon
+from jacer.services.materialise import (
+    materialise_day,
+    materialise_horizon,
+    sweep_stale_days,
+)
 
 router = APIRouter()
 
@@ -38,6 +42,13 @@ def materialise_horizon_endpoint(
         _validate_date(start)
 
     created = materialise_horizon(repo, start, days)
+
+    # Roll any now-past template tasks into their day's log and off the board.
+    # The board fires this endpoint on load, so the sweep runs as part of the
+    # normal materialisation cycle (ADR-005) — no separate endpoint needed. The
+    # boundary is the real "today", independent of the horizon start.
+    sweep_stale_days(repo, dt.date.today())
+
     return HorizonMaterialiseResponse(
         start_date=start,
         days=days,

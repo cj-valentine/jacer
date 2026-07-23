@@ -15,7 +15,12 @@ routine templates. Ships standalone; designed to slot into a larger platform lat
   - `Jacer.Tests` — bUnit unit tests.
 - `docs/adr/` — architecture decision records. Frontend stack is set by
   [ADR-003](docs/adr/ADR-003-blazor-mudblazor-frontend.md): Blazor + MudBlazor,
-  FastAPI frozen, DevExpress excluded on MIT-licence grounds.
+  FastAPI frozen, DevExpress excluded on MIT-licence grounds. Phase 3 adds
+  [ADR-004](docs/adr/ADR-004-status-canonical-completion.md) (`status` canonical,
+  `is_completed` derived), [ADR-005](docs/adr/ADR-005-obsidian-native-daily-logs.md)
+  (Obsidian-native daily logs + stale-day sweep), and
+  [ADR-006](docs/adr/ADR-006-reset-to-template-endpoint.md) (the one additive
+  route, `POST /api/tasks/{id}/reset-to-template`).
 - `legacy/` — preserved v1 codebase; historical only.
 
 ## Conventions
@@ -24,6 +29,8 @@ routine templates. Ships standalone; designed to slot into a larger platform lat
 - **API shape:** status-driven columns (`backlog | today | scheduled | done`),
   trailing-slash collection routes, flat `/api/template-items/{id}`. Duration
   totals are computed client-side; the backend has no aggregate endpoint.
+  `status` is canonical and `is_completed` is derived from it (ADR-004). The
+  contract is frozen except the single additive route in ADR-006.
 - **`TaskStatus`:** `Jacer.ApiClient.TaskStatus` collides with
   `System.Threading.Tasks.TaskStatus`; it's aliased in `GlobalUsings.cs` and the
   Razor `_Imports.razor`. Keep both if you add files that reference it.
