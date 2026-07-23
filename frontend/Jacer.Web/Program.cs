@@ -30,6 +30,10 @@ builder.Services.AddHttpClient<IDaysApi, DaysApiClient>(client =>
 {
     client.BaseAddress = new Uri(apiBaseUrl);
 });
+builder.Services.AddHttpClient<ICategoriesApi, CategoriesApiClient>(client =>
+{
+    client.BaseAddress = new Uri(apiBaseUrl);
+});
 
 var app = builder.Build();
 

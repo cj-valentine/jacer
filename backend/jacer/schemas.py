@@ -58,6 +58,18 @@ class TemplateItemUpdate(BaseModel):
     category_id: str | None = None
 
 
+class CategoryCreate(BaseModel):
+    name: str
+    # Optional: when omitted, the router assigns the next palette colour
+    # round-robin. When supplied, it must be one of CATEGORY_PALETTE.
+    colour: str | None = None
+
+
+class CategoryUpdate(BaseModel):
+    name: str | None = None
+    colour: str | None = None
+
+
 class MaterialiseResponse(BaseModel):
     date: str
     created_count: int

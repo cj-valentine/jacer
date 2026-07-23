@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from jacer.models import DailyLog, Task, Template, TemplateItem
+from jacer.models import Category, DailyLog, Task, Template, TemplateItem
 
 
 class Repository(ABC):
@@ -56,6 +56,20 @@ class Repository(ABC):
 
     @abstractmethod
     def delete_template_item(self, item_id: str) -> bool: ...
+
+    # Categories
+
+    @abstractmethod
+    def list_categories(self) -> list[Category]: ...
+
+    @abstractmethod
+    def get_category(self, category_id: str) -> Category | None: ...
+
+    @abstractmethod
+    def save_category(self, category: Category) -> Category: ...
+
+    @abstractmethod
+    def delete_category(self, category_id: str) -> bool: ...
 
     # Daily logs
 

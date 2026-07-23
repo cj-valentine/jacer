@@ -5,7 +5,7 @@ from typing import Any
 
 import frontmatter
 
-from jacer.models import DailyLog, Task, Template, TemplateItem
+from jacer.models import Category, DailyLog, Task, Template, TemplateItem
 from jacer.repositories.base import Repository
 
 
@@ -35,6 +35,7 @@ class MarkdownRepository(Repository):
         tasks/<uuid>.md            Task records (description in body, rest in frontmatter)
         templates/<uuid>.md        Template records (frontmatter only)
         template-items/<uuid>.md   TemplateItem records (description in body)
+        categories/<uuid>.md       Category records (frontmatter only)
         logs/<YYYY-MM-DD>.md       Daily log records (content in body)
         _materialised.json         Materialisation tracking index
 
@@ -47,10 +48,17 @@ class MarkdownRepository(Repository):
         self.tasks_dir = self.data_dir / "tasks"
         self.templates_dir = self.data_dir / "templates"
         self.template_items_dir = self.data_dir / "template-items"
+        self.categories_dir = self.data_dir / "categories"
         self.logs_dir = self.data_dir / "logs"
         self.materialised_path = self.data_dir / "_materialised.json"
 
-        for d in (self.tasks_dir, self.templates_dir, self.template_items_dir, self.logs_dir):
+        for d in (
+            self.tasks_dir,
+            self.templates_dir,
+            self.template_items_dir,
+            self.categories_dir,
+            self.logs_dir,
+        ):
             d.mkdir(parents=True, exist_ok=True)
 
     # Tasks
@@ -168,6 +176,41 @@ class MarkdownRepository(Repository):
             data["description"] = body
         try:
             return TemplateItem.model_validate(data)
+        except Exception:
+            return None
+
+    # Categories
+
+    def list_categories(self) -> list[Category]:
+        categories: list[Category] = []
+        for path in sorted(self.categories_dir.glob("*.md")):
+            category = self._load_category(path)
+            if category is not None:
+                categories.append(category)
+        return categories
+
+    def get_category(self, category_id: str) -> Category | None:
+        return self._load_category(self.categories_dir / f"{category_id}.md")
+
+    def save_category(self, category: Category) -> Category:
+        metadata = _serialise_metadata(category.model_dump())
+        _atomic_write(self.categories_dir / f"{category.id}.md", _dumps_post(metadata, ""))
+        return category
+
+    def delete_category(self, category_id: str) -> bool:
+        path = self.categories_dir / f"{category_id}.md"
+        if path.exists():
+            path.unlink()
+            return True
+        return False
+
+    def _load_category(self, path: Path) -> Category | None:
+        data = self._read_post(path)
+        if data is None:
+            return None
+        data.pop("__body", None)
+        try:
+            return Category.model_validate(data)
         except Exception:
             return None
 
