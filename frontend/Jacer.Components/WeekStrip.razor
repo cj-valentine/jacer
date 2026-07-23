@@ -1,0 +1,51 @@
+@* Week calendar strip (Marvin-style): the displayed week as seven numbered,
+   clickable days (Mon–Sun). Selecting a day drives what the board's list and
+   timeline show. Today is visually distinct; chevrons page the week. *@
+
+<div class="week-strip">
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small"
+                   aria-label="Previous week" OnClick="OnPrevWeek" />
+
+    <div class="week-strip__days">
+        @for (var i = 0; i < 7; i++)
+        {
+            var date = WeekStart.AddDays(i);
+            var isSelected = date.Date == SelectedDate.Date;
+            var isToday = date.Date == Today.Date;
+            <button type="button"
+                    class="week-day @(isSelected ? "week-day--selected" : "") @(isToday ? "week-day--today" : "")"
+                    data-date="@date.ToString("yyyy-MM-dd")"
+                    @onclick="() => OnSelectDay.InvokeAsync(date)">
+                <span class="week-day__dow">@DayInitials[i]</span>
+                <span class="week-day__num">@date.Day</span>
+            </button>
+        }
+    </div>
+
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small"
+                   aria-label="Next week" OnClick="OnNextWeek" />
+</div>
+
+@code {
+    /// <summary>Monday of the week to display.</summary>
+    [Parameter, EditorRequired] public DateTime WeekStart { get; set; }
+
+    [Parameter, EditorRequired] public DateTime SelectedDate { get; set; }
+
+    /// <summary>"Real today" — passed in so it stays deterministic and testable.</summary>
+    [Parameter, EditorRequired] public DateTime Today { get; set; }
+
+    [Parameter] public EventCallback<DateTime> OnSelectDay { get; set; }
+    [Parameter] public EventCallback OnPrevWeek { get; set; }
+    [Parameter] public EventCallback OnNextWeek { get; set; }
+
+    // Monday-first, matching the backend's day_of_week (0 = Monday).
+    private static readonly string[] DayInitials = ["M", "T", "W", "T", "F", "S", "S"];
+
+    /// <summary>Monday of the week containing <paramref name="date"/>.</summary>
+    public static DateTime MondayOf(DateTime date)
+    {
+        var diff = ((int)date.DayOfWeek + 6) % 7;  // Sunday=0 → 6, Monday=1 → 0
+        return date.Date.AddDays(-diff);
+    }
+}

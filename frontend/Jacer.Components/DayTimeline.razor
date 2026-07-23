@@ -90,6 +90,14 @@
     [Parameter] public EventCallback<TimelineMove> OnMove { get; set; }
     [Parameter] public EventCallback<TimelineResize> OnResize { get; set; }
 
+    /// <summary>
+    /// Fired when a slot is dropped on with no internal drag in progress — i.e.
+    /// something from outside (a backlog/upcoming/day-list card) was dropped onto
+    /// the timeline. Carries the slot's start minute; the parent decides what to
+    /// do with its own drag payload (schedule that task here, at this time).
+    /// </summary>
+    [Parameter] public EventCallback<int> OnExternalDrop { get; set; }
+
     private enum DragMode { Move, Resize }
 
     private string? _dragItemId;
@@ -125,15 +133,18 @@
 
     private async Task OnSlotDropAsync(int slotIndex)
     {
+        var slotStart = TimelineGrid.SlotStartMinute(StartHour, slotIndex, SlotMinutes);
+
         if (_dragItemId is null)
         {
+            // No internal item is being dragged — this is an external drop
+            // (a card from a list). Let the parent place its own payload here.
+            await OnExternalDrop.InvokeAsync(slotStart);
             return;
         }
 
         var id = _dragItemId;
         _dragItemId = null;
-
-        var slotStart = TimelineGrid.SlotStartMinute(StartHour, slotIndex, SlotMinutes);
 
         if (_dragMode == DragMode.Move)
         {

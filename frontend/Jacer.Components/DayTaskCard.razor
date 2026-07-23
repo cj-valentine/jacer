@@ -1,0 +1,276 @@
+@* A task card for the day list, backlog and upcoming groups. Uniform
+   affordances so a future-dated (upcoming) card is a normal card that happens
+   to carry a date (Phase 3.5, Amendment 1): complete, category, reschedule,
+   in-place title edit and delete are all available everywhere. *@
+
+<MudPaper Elevation="1" Class="day-task-card pa-2 mb-2" Style="@EdgeStyle"
+          draggable="true" @ondragstart="() => OnDragStart.InvokeAsync(Task.Id)">
+    <div class="d-flex align-center gap-1">
+        @if (Task.Diverged)
+        {
+            <MudTooltip Text="Edited from its template">
+                <span class="diverged-dot" aria-label="Edited from its template"></span>
+            </MudTooltip>
+        }
+
+        @if (_editing)
+        {
+            <MudTextField T="string" @bind-Value="_editTitle" Immediate="true" AutoFocus="true"
+                          Variant="Variant.Text" Margin="Margin.Dense" Class="flex-grow-1"
+                          OnKeyDown="OnEditKeyDown" OnBlur="CommitEditAsync" />
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="flex-grow-1 day-task-card__title"
+                     title="Double-click to edit"
+                     @ondblclick="BeginEdit">@Task.Title</MudText>
+        }
+
+        @if (ShowDateChip && Task.ScheduledDate is not null)
+        {
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                     Icon="@Icons.Material.Filled.Event">@DateChipLabel</MudChip>
+        }
+    </div>
+
+    <MudText Typo="Typo.caption" Color="Color.Secondary">
+        @(Task.ScheduledTime is not null ? $"{Task.ScheduledTime} · " : "")@Task.DurationMinutes min
+        @if (_category is not null)
+        {
+            <span> · @_category.Name</span>
+        }
+    </MudText>
+
+    <div class="d-flex align-center gap-1 mt-1">
+        <MudTooltip Text="Complete">
+            <MudIconButton Icon="@Icons.Material.Filled.CheckCircleOutline" Size="Size.Small"
+                           Color="Color.Success" aria-label="Complete" Disabled="_busy"
+                           OnClick="CompleteAsync" />
+        </MudTooltip>
+
+        @* Category assignment. *@
+        <MudMenu Icon="@Icons.Material.Filled.Label" Size="Size.Small" Dense="true"
+                 aria-label="Category" title="Category">
+            @foreach (var cat in Categories)
+            {
+                <MudMenuItem OnClick="@(() => AssignCategoryAsync(cat.Id))">
+                    <div class="d-flex align-center gap-2">
+                        <span class="cat-swatch" style="background:@cat.Colour"></span>@cat.Name
+                    </div>
+                </MudMenuItem>
+            }
+            @if (Categories.Count > 0)
+            {
+                <MudDivider />
+            }
+            <MudMenuItem OnClick="@(() => AssignCategoryAsync(null))">Uncategorised</MudMenuItem>
+        </MudMenu>
+
+        @* Reschedule to another day (next 7) or back to the backlog. *@
+        <MudMenu Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Dense="true"
+                 aria-label="Reschedule" title="Reschedule">
+            @foreach (var (label, date) in RescheduleOptions())
+            {
+                <MudMenuItem OnClick="@(() => RescheduleAsync(date))">@label</MudMenuItem>
+            }
+            <MudDivider />
+            <MudMenuItem OnClick="@(() => RescheduleAsync(null))">No date (Backlog)</MudMenuItem>
+        </MudMenu>
+
+        <MudTooltip Text="Pick a date">
+            <MudIconButton Icon="@Icons.Material.Filled.CalendarMonth" Size="Size.Small"
+                           aria-label="Pick a date" Disabled="_busy" OnClick="OpenPickerAsync" />
+        </MudTooltip>
+
+        <MudSpacer />
+
+        @if (Task.Diverged && Task.TemplateOriginId is not null)
+        {
+            <MudTooltip Text="Reset to template">
+                <MudIconButton Icon="@Icons.Material.Filled.RestartAlt" Size="Size.Small"
+                               Color="Color.Warning" aria-label="Reset to template"
+                               Disabled="_busy" OnClick="ResetAsync" />
+            </MudTooltip>
+        }
+
+        <MudTooltip Text="Delete">
+            <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small"
+                           aria-label="Delete" Disabled="_busy" OnClick="DeleteAsync" />
+        </MudTooltip>
+    </div>
+
+    @* Hidden picker for arbitrary dates, opened by the calendar button above. *@
+    <div style="display:none">
+        <MudDatePicker @ref="_picker" PickerVariant="PickerVariant.Dialog"
+                       DateChanged="OnArbitraryDatePicked" />
+    </div>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public required TaskDto Task { get; set; }
+
+    [Parameter] public IReadOnlyList<CategoryDto> Categories { get; set; } = [];
+
+    /// <summary>Show a date chip (used in the Upcoming group).</summary>
+    [Parameter] public bool ShowDateChip { get; set; }
+
+    /// <summary>"Real today" — injected for deterministic reschedule labels/tests.</summary>
+    [Parameter] public DateTime Today { get; set; } = DateTime.Today;
+
+    [Parameter] public EventCallback<string> OnComplete { get; set; }
+    [Parameter] public EventCallback<string> OnDelete { get; set; }
+    [Parameter] public EventCallback<TaskReschedule> OnReschedule { get; set; }
+    [Parameter] public EventCallback<CategoryAssignment> OnAssignCategory { get; set; }
+    [Parameter] public EventCallback<TaskTitleEdit> OnEditTitle { get; set; }
+    [Parameter] public EventCallback<string> OnReset { get; set; }
+
+    /// <summary>Raised (with the task id) when the card starts being dragged, so
+    /// the board knows which task a subsequent list/timeline drop refers to.</summary>
+    [Parameter] public EventCallback<string> OnDragStart { get; set; }
+
+    private bool _busy;
+    private bool _editing;
+    private string _editTitle = "";
+    private MudDatePicker? _picker;
+
+    private CategoryDto? _category =>
+        Task.CategoryId is null ? null : Categories.FirstOrDefault(c => c.Id == Task.CategoryId);
+
+    private string EdgeStyle =>
+        _category is not null ? $"border-left: 4px solid {_category.Colour};" : "";
+
+    private string DateChipLabel
+    {
+        get
+        {
+            if (Task.ScheduledDate is null || !DateTime.TryParse(Task.ScheduledDate, out var d))
+            {
+                return Task.ScheduledDate ?? "";
+            }
+            var days = (d.Date - Today.Date).Days;
+            return days switch
+            {
+                0 => "Today",
+                1 => "Tomorrow",
+                _ => d.ToString("ddd d MMM"),
+            };
+        }
+    }
+
+    private IEnumerable<(string Label, string Date)> RescheduleOptions()
+    {
+        for (var i = 0; i < 7; i++)
+        {
+            var date = Today.AddDays(i);
+            var label = i switch
+            {
+                0 => "Today",
+                1 => "Tomorrow",
+                _ => date.ToString("ddd d MMM"),
+            };
+            yield return (label, date.ToString("yyyy-MM-dd"));
+        }
+    }
+
+    private void BeginEdit()
+    {
+        _editTitle = Task.Title;
+        _editing = true;
+    }
+
+    private async Task OnEditKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await CommitEditAsync();
+        }
+        else if (e.Key == "Escape")
+        {
+            _editing = false;
+        }
+    }
+
+    private async Task CommitEditAsync()
+    {
+        if (!_editing)
+        {
+            return;
+        }
+        _editing = false;
+        var title = _editTitle.Trim();
+        if (title.Length > 0 && title != Task.Title)
+        {
+            await OnEditTitle.InvokeAsync(new TaskTitleEdit(Task.Id, title));
+        }
+    }
+
+    private async Task CompleteAsync()
+    {
+        _busy = true;
+        await OnComplete.InvokeAsync(Task.Id);
+        _busy = false;
+    }
+
+    private async Task DeleteAsync()
+    {
+        _busy = true;
+        await OnDelete.InvokeAsync(Task.Id);
+        _busy = false;
+    }
+
+    private async Task RescheduleAsync(string? date)
+    {
+        _busy = true;
+        await OnReschedule.InvokeAsync(new TaskReschedule(Task.Id, date));
+        _busy = false;
+    }
+
+    private async Task AssignCategoryAsync(string? categoryId)
+    {
+        _busy = true;
+        await OnAssignCategory.InvokeAsync(new CategoryAssignment(Task.Id, categoryId));
+        _busy = false;
+    }
+
+    private async Task ResetAsync()
+    {
+        _busy = true;
+        await OnReset.InvokeAsync(Task.Id);
+        _busy = false;
+    }
+
+    private async Task OpenPickerAsync()
+    {
+        if (_picker is not null)
+        {
+            await _picker.OpenAsync();
+        }
+    }
+
+    private async Task OnArbitraryDatePicked(DateTime? date)
+    {
+        if (date is not null)
+        {
+            await RescheduleAsync(date.Value.ToString("yyyy-MM-dd"));
+        }
+    }
+}
+
+<style>
+    .day-task-card__title { cursor: text; }
+    .cat-swatch {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        flex: 0 0 auto;
+    }
+    .diverged-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: var(--mud-palette-warning);
+        flex: 0 0 auto;
+    }
+</style>

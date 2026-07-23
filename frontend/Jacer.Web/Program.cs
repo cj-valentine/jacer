@@ -10,6 +10,9 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddMudServices();
 
+// Per-circuit (per-session) board UI state — remembers collapsed groups.
+builder.Services.AddScoped<Jacer.Components.BoardUiState>();
+
 // Typed client for the frozen FastAPI backend. Base URL is config-driven
 // (appsettings: Jacer:ApiBaseUrl), defaulting to the local dev backend.
 // The trailing slash matters so relative paths combine correctly.

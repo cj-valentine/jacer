@@ -54,6 +54,23 @@ public sealed class TasksApiClient(HttpClient http) : ITasksApi
         return (await response.Content.ReadFromJsonAsync<TaskDto>(JacerJson.Options, ct))!;
     }
 
+    public async Task<TaskDto> SetCategoryAsync(string id, string? categoryId, CancellationToken ct = default)
+    {
+        // Explicit body so category_id is always sent, even when null (clear).
+        var payload = new Dictionary<string, object?> { ["category_id"] = categoryId };
+        var response = await http.PatchAsJsonAsync($"api/tasks/{id}", payload, JacerJson.WriteNulls, ct);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<TaskDto>(JacerJson.Options, ct))!;
+    }
+
+    public async Task<TaskDto> SetScheduledDateAsync(string id, string? date, CancellationToken ct = default)
+    {
+        var payload = new Dictionary<string, object?> { ["scheduled_date"] = date };
+        var response = await http.PatchAsJsonAsync($"api/tasks/{id}", payload, JacerJson.WriteNulls, ct);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<TaskDto>(JacerJson.Options, ct))!;
+    }
+
     public async Task<TaskDto?> ResetToTemplateAsync(string id, CancellationToken ct = default)
     {
         var response = await http.PostAsync($"api/tasks/{id}/reset-to-template", null, ct);

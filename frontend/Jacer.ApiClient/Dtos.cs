@@ -25,13 +25,19 @@ public sealed record TaskDto
 /// <summary>
 /// Payload for <c>POST /api/tasks/</c>. Only <see cref="Title"/> is required;
 /// unset fields are omitted so the backend applies its own defaults
-/// (status=backlog, duration_minutes=30).
+/// (status=backlog, duration_minutes=30). The optional placement/category
+/// fields let a deleted task be recreated faithfully for undo (all already part
+/// of the frozen backend <c>TaskCreate</c> contract).
 /// </summary>
 public sealed record TaskCreateDto
 {
     public required string Title { get; init; }
+    public string? Description { get; init; }
     public TaskStatus? Status { get; init; }
     public int? DurationMinutes { get; init; }
+    public string? CategoryId { get; init; }
+    public string? ScheduledTime { get; init; }
+    public string? ScheduledDate { get; init; }
 }
 
 /// <summary>
